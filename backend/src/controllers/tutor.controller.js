@@ -187,61 +187,6 @@ class TutorController {
   }
 
   /**
-   * POST /api/v1/tutors/submissions/:type/:submissionId/ai-prelim
-   */
-  static async runAiPrelimCheck(req, res, next) {
-    try {
-      const { type, submissionId } = req.params;
-      if (!['writing', 'speaking'].includes(type)) {
-        return res.status(400).json({ success: false, error: { message: 'Invalid type' }, data: null, meta: {} });
-      }
-
-      const result = await TutorService.runAiPrelimCheck(type, submissionId, {
-        ...req.body,
-        usageContext: {
-          userId: req.user.id,
-          requesterRole: req.user.role,
-          feature: 'tutor_ai_reference',
-          entityType: type === 'speaking' ? 'speaking_submission' : 'writing_submission',
-          entityId: submissionId,
-        },
-      });
-
-      res.status(200).set('Cache-Control', 'private, no-store').json({
-        success: true,
-        data: result,
-        error: null,
-        meta: {}
-      });
-    } catch (error) {
-      next(error);
-    }
-  }
-
-  /**
-   * POST /api/v1/tutors/submissions/speaking/:partId/transcribe
-   */
-  static async transcribeSpeaking(req, res, next) {
-    try {
-      const { partId } = req.params;
-      const transcript = await TutorService.transcribeSpeakingPart(partId, {
-        userId: req.user.id,
-        feature: 'tutor_ai_reference',
-        entityType: 'speaking_submission',
-        entityId: partId,
-      });
-      
-      res.status(200).json({
-        success: true,
-        data: { transcript },
-        error: null,
-        meta: null
-      });
-    } catch (error) {
-      next(error);
-    }
-  }
-  /**
    * GET /api/v1/tutors/grading-history/:submissionId
    */
   static async getGradingHistoryById(req, res, next) {
@@ -344,58 +289,6 @@ class TutorController {
     }
   }
 
-  /**
-   * GET /api/v1/tutors/ai-reference
-   * List AI-graded writing submissions for tutor reference
-   */
-  static async getAiReferenceList(req, res, next) {
-    try {
-      const { search } = req.query;
-      const filters = { search: search?.trim() };
-
-      const data = await TutorService.getAiReferenceList(filters);
-
-      res.status(200).json({
-        success: true,
-        data,
-        error: null,
-        meta: { total: data.length },
-      });
-    } catch (err) {
-      next(err);
-    }
-  }
-
-  /**
-   * GET /api/v1/tutors/ai-reference/:submissionId
-   * View AI-graded submission detail (read-only)
-   */
-  static async getAiReferenceDetail(req, res, next) {
-    try {
-      const { submissionId } = req.params;
-      const detail = await TutorService.getAiReferenceDetail(
-        submissionId
-      );
-
-      if (!detail) {
-        return res.status(404).json({
-          success: false,
-          data: null,
-          error: { code: 'NOT_FOUND', message: 'AI reference not found' },
-          meta: {},
-        });
-      }
-
-      res.status(200).json({
-        success: true,
-        data: detail,
-        error: null,
-        meta: {},
-      });
-    } catch (err) {
-      next(err);
-    }
-  }
 }
 
 module.exports = TutorController;

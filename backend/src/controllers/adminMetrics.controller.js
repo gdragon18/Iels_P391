@@ -30,12 +30,10 @@ const exportReportsCsv = async (req, res, next) => {
       row.date,
       row.newUsers,
       row.attempts,
-      row.aiCalls,
-      row.aiTokens,
       row.submissions,
     ]);
     const csv = [
-      'Date,New Users,Attempts,AI Calls,AI Tokens,Submissions',
+      'Date,New Users,Attempts,Submissions',
       ...rows.map((row) => row.map(csvEscape).join(',')),
     ].join('\n');
     const filename = `admin-report-${report.range.from}-to-${report.range.to}.csv`;
@@ -47,18 +45,8 @@ const exportReportsCsv = async (req, res, next) => {
   }
 };
 
-const getAiUsage = async (req, res, next) => {
-  try {
-    const data = await adminMetricsService.getAiUsage(req.query);
-    res.status(200).json({ success: true, data, error: null, meta: null });
-  } catch (error) {
-    next(error);
-  }
-};
-
 module.exports = {
   getOverview,
   getReports,
   exportReportsCsv,
-  getAiUsage,
 };

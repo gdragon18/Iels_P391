@@ -4,6 +4,7 @@ const supabase = require('../config/supabase');
 const { randomUUID } = require('node:crypto');
 const path = require('path');
 const { aiGradingConfig } = require('../config/aiGrading.config');
+const { getSpeakingSubmissionService } = require('../services/speakingSubmission.service');
 
 const SUPABASE_BUCKET = process.env.SUPABASE_SPEAKING_BUCKET || 'speaking-audio';
 
@@ -38,12 +39,16 @@ class SubmissionController {
     try {
       const userId = req.user.id;
       const { test_id, grader, tasks } = req.body;
+
+      if (grader === 'ai') {
+        throw new AppError('Chức năng chấm điểm AI đã ngừng hỗ trợ. Vui lòng nộp bài cho Tutor.', 400, 'AI_DISABLED');
+      }
       
       if (!tasks || !Array.isArray(tasks) || tasks.length === 0) {
         throw new AppError('Tasks are required', 400, 'MISSING_FIELD');
       }
 
-      const result = await SubmissionService.submitFullWriting(userId, test_id, grader, tasks, {
+      const result = await SubmissionService.submitFullWriting(userId, test_id, grader || 'tutor', tasks, {
         idempotencyKey: req.get('Idempotency-Key'),
         io: req.app.get('io'),
       });
@@ -300,18 +305,56 @@ class SubmissionController {
   }
 
   /**
+   * Tạo URL ký sẵn (presigned URL) để client upload file âm thanh trực tiếp lên cloud storage
+   */
+  static async createAudioUpload(req, res, next) {
+    try {
+      const data = await getSpeakingSubmissionService().createAudioUpload(req.user.id, req.body);
+      res.status(201).set('Cache-Control', 'private, no-store').json({
+        success: true,
+        data,
+        error: null,
+        meta: {}
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
    * Route for submitting a full speaking test
    */
   static async submitFullSpeaking(req, res, next) {
     try {
-      const userId = req.user.id;
-      const { test_id, grader, parts } = req.body;
+      if (req.user.role !== 'student') {
+        throw new AppError('Chỉ học viên được gửi bài.', 403, 'AUTH_PERM_001');
+      }
+
+      const { test_id, grader, parts } = req.body || {};
+
+      if (grader === 'ai') {
+        throw new AppError('Chức năng chấm điểm AI đã ngừng hỗ trợ. Vui lòng nộp bài cho Tutor.', 400, 'AI_DISABLED');
+      }
+
+      if (parts && Array.isArray(parts) && parts.every((part) => part.upload_token)) {
+        const data = await getSpeakingSubmissionService().submitTutorSpeaking({
+          userId: req.user.id,
+          testId: test_id,
+          parts,
+        });
+        return res.status(201).set('Cache-Control', 'private, no-store').json({
+          success: true,
+          data,
+          error: null,
+          meta: {}
+        });
+      }
 
       if (!parts || !Array.isArray(parts) || parts.length !== 3) {
         throw new AppError('Full speaking submission requires exactly 3 parts', 400, 'INVALID_FIELD');
       }
 
-      const result = await SubmissionService.submitFullSpeaking(userId, test_id, grader, parts);
+      const result = await SubmissionService.submitFullSpeaking(req.user.id, test_id, grader || 'tutor', parts);
 
       res.status(201).set('Cache-Control', 'private, no-store').json({
         success: true,

@@ -11,7 +11,6 @@ const attemptRoutes = require('./attempts.routes');
 const audioRoutes = require('./audio.routes');
 const supportRoutes = require('./support.routes');
 const trackingRoutes = require('./tracking.routes');
-const assistantRoutes = require('../../../api/assistant/assistant.routes');
 
 // Health check endpoint for API v1
 router.get('/health', (req, res) => {
@@ -47,6 +46,5 @@ router.use('/attempts', attemptRoutes);
 router.use('/audio', audioRoutes);
 router.use('/support', supportRoutes);
 router.use('/tracking', trackingRoutes);
-router.use('/assistant', assistantRoutes);
 
 module.exports = router;

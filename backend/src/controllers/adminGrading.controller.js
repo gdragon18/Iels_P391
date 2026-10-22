@@ -53,39 +53,6 @@ const listSubmissions = async (req, res, next) => {
   }
 };
 
-/**
- * POST /admin/submissions/:type/:id/retry
- * Reset trạng thái bài nộp về pending để AI chấm lại.
- * :type — 'writing' | 'speaking'
- * :id   — UUID của bài nộp
- */
-const retryGrading = async (req, res, next) => {
-  try {
-    const { type, id } = req.params;
-
-    if (!['writing', 'speaking'].includes(type)) {
-      return res.status(400).json({
-        success: false,
-        data: null,
-        error: { code: 'VALIDATION_ERROR', message: "type must be 'writing' or 'speaking'" },
-        meta: null
-      });
-    }
-
-    const result = await GradingOversightService.retryGrading(type, id);
-
-    res.status(200).json({
-      success: true,
-      data: result,
-      error: null,
-      meta: { message: `Submission ${id} has been queued for re-grading.` }
-    });
-  } catch (error) {
-    next(error);
-  }
-};
-
 module.exports = {
   listSubmissions,
-  retryGrading
 };
