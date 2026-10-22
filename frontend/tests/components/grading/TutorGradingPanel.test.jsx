@@ -1,0 +1,157 @@
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
+import { vi, describe, it, expect, beforeEach } from 'vitest';
+import TutorGradingPanel from '../../../src/components/grading/TutorGradingPanel';
+import { calculatePreviewBand } from '../../../src/utils/ieltsScoring';
+import gradingService from '../../../src/services/grading.service';
+
+vi.mock('../../../src/services/grading.service');
+
+describe('TutorGradingPanel Component', () => {
+  const mockSubmissionId = 'sub-123';
+  const defaultProps = {
+    submissionId: mockSubmissionId,
+    type: 'writing',
+    activeTaskId: 'task-1',
+    activeTaskNumber: 1,
+    tasks: [{ id: 'task-1', name: 'Task 1' }],
+  };
+
+  const renderPanel = (props = {}) =>
+    render(
+      <MemoryRouter>
+        <TutorGradingPanel {...defaultProps} {...props} />
+      </MemoryRouter>
+    );
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  describe('IELTS Rounding Rule (calculatePreviewBand)', () => {
+    it('rounds averages to the nearest half band', () => {
+      expect(calculatePreviewBand([6, 6, 6, 7])).toBe(6.5);
+      expect(calculatePreviewBand([6, 7, 7, 7])).toBe(7.0);
+      expect(calculatePreviewBand([6, 6, 6, 6.5])).toBe(6.0);
+      expect(calculatePreviewBand([7, 7, 7, 6.5])).toBe(7.0);
+      expect(calculatePreviewBand([6, 6, 7, 7])).toBe(6.5);
+    });
+  });
+
+  describe('Component Rendering', () => {
+    it('renders audio player for speaking type when audioUrl is provided', () => {
+      renderPanel({
+        type: 'speaking',
+        activeTaskId: 'part-1',
+        activeTaskNumber: 1,
+        tasks: [{ id: 'part-1', name: 'Part 1' }],
+        audioUrl: 'https://cdn.example/audio.mp3',
+      });
+
+      expect(screen.getByTestId('audio-player')).toHaveAttribute(
+        'src',
+        'https://cdn.example/audio.mp3'
+      );
+    });
+
+    it('shows saved tutor speaking grade in read-only mode', () => {
+      renderPanel({
+        type: 'speaking',
+        activeTaskId: 'part-1',
+        activeTaskNumber: 1,
+        tasks: [{ id: 'part-1', name: 'Part 1' }],
+        readOnly: true,
+        existingTutorGrade: {
+          overallBand: 6,
+          criterionScores: {
+            fluencyCoherence: 6,
+            lexicalResource: 6.5,
+            grammaticalRangeAccuracy: 5.5,
+            pronunciation: 6,
+          },
+          writtenFeedback: 'Saved speaking feedback for the student.',
+        },
+      });
+
+      expect(screen.getByTestId('input-fluencyScore')).toHaveValue('6');
+      expect(screen.getByTestId('input-lexicalScore')).toHaveValue('6.5');
+      expect(screen.getByTestId('input-grammarScore')).toHaveValue('5.5');
+      expect(screen.getByTestId('input-pronunciationScore')).toHaveValue('6');
+      expect(screen.getByTestId('preview-band')).toHaveTextContent('6.0');
+      expect(screen.getByTestId('textarea-feedback')).toHaveValue('Saved speaking feedback for the student.');
+    });
+  });
+
+  describe('Form Submission', () => {
+    it('allows input of writing scores and submits successfully', async () => {
+      gradingService.gradeSubmission.mockResolvedValueOnce({
+        success: true,
+        data: { report_id: 'rep-1' },
+      });
+      const onGradingCompleteMock = vi.fn();
+
+      renderPanel({ onGradingComplete: onGradingCompleteMock });
+
+      fireEvent.change(screen.getByTestId('input-taskAchievementScore'), { target: { value: '6' } });
+      fireEvent.change(screen.getByTestId('input-coherenceScore'), { target: { value: '6' } });
+      fireEvent.change(screen.getByTestId('input-lexicalScore'), { target: { value: '6' } });
+      fireEvent.change(screen.getByTestId('input-grammarScore'), { target: { value: '7' } });
+      expect(screen.getByTestId('preview-band')).toHaveTextContent('6.5');
+
+      fireEvent.change(screen.getByTestId('textarea-feedback'), { target: { value: 'Good job!' } });
+      fireEvent.click(screen.getByText('Submit Grade'));
+
+      await waitFor(() => {
+        expect(gradingService.gradeSubmission).toHaveBeenCalledWith('writing', mockSubmissionId, {
+          writtenFeedback: 'Good job!',
+          bandScore: 6.5,
+          taskNumber: 1,
+          taskAchievementScore: 6,
+          coherenceScore: 6,
+          lexicalScore: 6,
+          grammarScore: 7,
+        });
+        expect(onGradingCompleteMock).toHaveBeenCalledWith({ report_id: 'rep-1' });
+      });
+    });
+
+    it('handles submit error', async () => {
+      gradingService.gradeSubmission.mockRejectedValueOnce({
+        response: { data: { error: { message: 'Failed validation' } } },
+      });
+
+      renderPanel();
+
+      fireEvent.change(screen.getByTestId('input-taskAchievementScore'), { target: { value: '6' } });
+      fireEvent.change(screen.getByTestId('input-coherenceScore'), { target: { value: '6' } });
+      fireEvent.change(screen.getByTestId('input-lexicalScore'), { target: { value: '6' } });
+      fireEvent.change(screen.getByTestId('input-grammarScore'), { target: { value: '6' } });
+      fireEvent.change(screen.getByTestId('textarea-feedback'), { target: { value: 'Msg' } });
+      fireEvent.submit(screen.getByRole('button', { name: 'Submit Grade' }).closest('form'));
+
+      await waitFor(() => {
+        expect(screen.getByText('Failed validation')).toBeInTheDocument();
+      });
+    });
+
+    it('shows a queue return button after completing tutor grading', async () => {
+      gradingService.gradeSubmission.mockResolvedValueOnce({
+        success: true,
+        data: { tutorStatus: 'graded' },
+      });
+
+      renderPanel();
+
+      fireEvent.change(screen.getByTestId('input-taskAchievementScore'), { target: { value: '7' } });
+      fireEvent.change(screen.getByTestId('input-coherenceScore'), { target: { value: '7' } });
+      fireEvent.change(screen.getByTestId('input-lexicalScore'), { target: { value: '7' } });
+      fireEvent.change(screen.getByTestId('input-grammarScore'), { target: { value: '7' } });
+      fireEvent.change(screen.getByTestId('textarea-feedback'), { target: { value: 'Completed.' } });
+      fireEvent.click(screen.getByText('Submit Grade'));
+
+      await waitFor(() => {
+        expect(screen.getByText(/Đã gửi điểm cho học sinh/i)).toBeInTheDocument();
+      });
+    });
+  });
+});

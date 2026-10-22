@@ -1,0 +1,64 @@
+name: CI/CD Pipeline to VPS
+
+on:
+  push:
+    branches:
+      - main
+      # Thêm nhánh của bạn nếu cần, ví dụ: feature-global-ielts-virtual-assistant/Datnt
+  workflow_dispatch: # Cho phép click deploy thủ công (1-click) từ giao diện GitHub
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 🚀 Deploy to VPS via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USERNAME }}
+          password: ${{ secrets.VPS_PASSWORD }}
+          command_timeout: 30m
+          script: |
+            set -Eeuo pipefail
+
+            cd /root/Ielts-Online-Tests-Online-Test
+            git pull origin main
+
+            # ── Critical path: any failure here aborts deploy ──
+            docker compose --env-file .env.production -f docker-compose.prod.yml config --quiet
+            docker compose --env-file .env.production -f docker-compose.prod.yml build --no-cache backend frontend
+
+            docker compose --env-file .env.production -f docker-compose.prod.yml \
+              run --rm --no-deps backend npm run migrate:preflight || echo "⚠️  preflight check returned non-zero (may be OK on first run)"
+            docker compose --env-file .env.production -f docker-compose.prod.yml \
+              run --rm --no-deps backend npm run migrate
+
+            docker compose --env-file .env.production -f docker-compose.prod.yml up -d --remove-orphans
+
+            # Tự động dọn dẹp các Docker image và container rác (không sử dụng) để tránh đầy ổ cứng
+            docker system prune -f
+
+            # Wait for containers to boot before verification
+            sleep 10
+            docker compose --env-file .env.production -f docker-compose.prod.yml ps
+
+            # ── Verification: report but don't block deploy ──
+            docker compose --env-file .env.production -f docker-compose.prod.yml \
+              exec -T speaking-worker sh -lc '
+                set -e
+                command -v ffmpeg
+                command -v ffprobe
+                ffmpeg -version | head -n 1
+                ffprobe -version | head -n 1
+              ' || echo "⚠️  speaking-worker ffmpeg check failed (worker may still be starting)"
+
+            docker compose --env-file .env.production -f docker-compose.prod.yml \
+              exec -T backend npm run speaking:runtime-check \
+              || echo "⚠️  runtime-check returned non-zero (review output above)"
+
+            # Only allowlisted lifecycle messages are printed
+            docker compose --env-file .env.production -f docker-compose.prod.yml \
+              logs --no-color --tail=100 backend speaking-worker 2>&1 \
+              | grep -E 'AI Speaking worker|Claimed AI grading job|AI grading stage metric|Server is running|Migration' \
+              || echo "(no matching log lines yet)"

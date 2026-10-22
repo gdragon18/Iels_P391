@@ -1,0 +1,318 @@
+/**
+ * @file adminOps.service.js
+ * @description Operational data layer for admin: content review, grading oversight,
+ * sessions, contact inbox, reports and tutor assignment.
+ *
+ * Backend endpoints are planned but not yet implemented (see .sdd/shared_context.md:
+ * mock_tests, library_resources, writing_submissions, speaking_submissions,
+ * user_sessions, contact_submissions, platform_metrics_snapshots). Each fetch tries
+ * the real endpoint and falls back to clearly-flagged sample data so the admin UI is
+ * fully demonstrable. Mutations attempt the API and degrade gracefully in dev.
+ *
+ * Each fetch resolves to { data, isSample }.
+ */
+import api from './api';
+
+const ok = (data) => ({ data, isSample: false });
+const sample = (data) => ({ data, isSample: true });
+
+const iso = (d, h = 0) => {
+  const t = new Date();
+  t.setDate(t.getDate() + d);
+  t.setHours(t.getHours() + h);
+  return t.toISOString();
+};
+
+// ── Sample datasets (module-level keeps fetchers small) ──────────────────────
+const SAMPLE_PENDING_TESTS = [
+  { id: 't1', title: 'IELTS Reading Practice - Academic 12', skill: 'reading', difficulty: 'intermediate', created_by: 'Bá Minh', is_published: false, publish_at: null, submitted_at: iso(-1) },
+  { id: 't2', title: 'Listening Full Test - Cambridge 18', skill: 'listening', difficulty: 'advanced', created_by: 'hương dương', is_published: false, publish_at: iso(2), submitted_at: iso(-2) },
+  { id: 't3', title: 'Writing Task 2 - Opinion Essays', skill: 'writing', difficulty: 'beginner', created_by: 'huhu', is_published: false, publish_at: null, submitted_at: iso(0, -3) },
+];
+
+const SAMPLE_PENDING_RESOURCES = [
+  { id: 'r1', title: 'Cambridge IELTS 18 - Academic.pdf', resource_type: 'pdf', uploaded_by: 'Đạt Nguyễn Văn', file_size_bytes: 18_400_000, is_published: false, created_at: iso(-1) },
+  { id: 'r2', title: 'Listening Section 1 - Audio.mp3', resource_type: 'audio', uploaded_by: 'Bá Minh', file_size_bytes: 9_200_000, is_published: false, created_at: iso(0, -5) },
+];
+
+const SAMPLE_SCHEDULE = [
+  { id: 't2', title: 'Listening Full Test - Cambridge 18', kind: 'Đề thi', publish_at: iso(2), created_by: 'hương dương' },
+  { id: 't9', title: 'Reading Mock - Tháng 6', kind: 'Đề thi', publish_at: iso(5), created_by: 'Bá Minh' },
+  { id: 'r9', title: 'Vocabulary Booklet - Unit 5.pdf', kind: 'Tài liệu', publish_at: iso(7), created_by: 'Đạt Nguyễn Văn' },
+];
+
+
+
+const SAMPLE_SESSIONS = [
+  { id: 'se1', user: 'Le Tien Thanh', email: 'thanhthe171416@fpt.edu.vn', ip: '113.161.42.10', device: 'Chrome · Windows', is_oauth: false, provider: null, last_active_at: iso(0, -1), expires_at: iso(6) },
+  { id: 'se2', user: 'Not Hướng Dương', email: 'nothuongduong@gmail.com', ip: '14.169.20.7', device: 'Safari · iPhone', is_oauth: true, provider: 'google', last_active_at: iso(0, -3), expires_at: iso(5) },
+  { id: 'se3', user: 'admin@ieltszone.vn', email: 'admin@ieltszone.vn', ip: '45.227.255.206', device: 'Firefox · Linux', is_oauth: false, provider: null, last_active_at: iso(0, -8), expires_at: iso(2) },
+];
+
+
+const SAMPLE_TUTORS = [
+  { id: 'tu1', name: 'Bá Minh' }, { id: 'tu2', name: 'hương dương' },
+  { id: 'tu3', name: 'huhu' }, { id: 'tu4', name: 'hâha' },
+];
+
+const SAMPLE_ASSIGNMENTS = [
+  { id: 'w1', student: 'Not Hướng Dương', email: 'nothuongduong@gmail.com', type: 'writing', task_or_part: 2, target_band: 7.0, tutor_id: 'tu1', submitted_at: iso(0, -1) },
+  { id: 's1', student: 'Đạt Nguyễn Văn', email: 'thuyk2444@gmail.com', type: 'speaking', task_or_part: 1, target_band: 6.5, tutor_id: null, submitted_at: iso(0, -2) },
+  { id: 'w2', student: 'wed201c', email: 'wed201c@gmail.com', type: 'writing', task_or_part: 1, target_band: 8.0, tutor_id: 'tu2', submitted_at: iso(0, -3) },
+  { id: 's2', student: 'Le Tien Thanh', email: 'thanhthe171416@fpt.edu.vn', type: 'speaking', task_or_part: 3, target_band: 6.0, tutor_id: null, submitted_at: iso(0, -4) },
+  { id: 'w3', student: 'admin', email: 'admin@ieltszone.vn', type: 'writing', task_or_part: 1, target_band: 7.5, tutor_id: 'tu3', submitted_at: iso(0, -5) },
+  { id: 'w4', student: 'Bá Minh', email: 'baminh1610@gmail.com', type: 'writing', task_or_part: 2, target_band: 5.5, tutor_id: null, submitted_at: iso(0, -6) },
+  { id: 's3', student: 'Trần Văn A', email: 'tranvana@example.com', type: 'speaking', task_or_part: 2, target_band: 6.5, tutor_id: 'tu4', submitted_at: iso(-1, -1) },
+  { id: 'w5', student: 'Nguyễn Thị B', email: 'nguyenthib@example.com', type: 'writing', task_or_part: 2, target_band: 7.0, tutor_id: null, submitted_at: iso(-1, -2) },
+  { id: 's4', student: 'Lê Văn C', email: 'levanc@example.com', type: 'speaking', task_or_part: 1, target_band: 8.0, tutor_id: 'tu1', submitted_at: iso(-1, -3) },
+  { id: 'w6', student: 'Phạm Thị D', email: 'phamthid@example.com', type: 'writing', task_or_part: 1, target_band: 6.0, tutor_id: null, submitted_at: iso(-1, -4) },
+  { id: 's5', student: 'Hoàng Văn E', email: 'hoangvane@example.com', type: 'speaking', task_or_part: 3, target_band: 7.5, tutor_id: 'tu2', submitted_at: iso(-2, 0) },
+  { id: 'w7', student: 'Vũ Thị F', email: 'vuthif@example.com', type: 'writing', task_or_part: 2, target_band: 6.5, tutor_id: null, submitted_at: iso(-2, -1) },
+  { id: 'w8', student: 'Đặng Văn G', email: 'dangvang@example.com', type: 'writing', task_or_part: 1, target_band: 7.0, tutor_id: 'tu3', submitted_at: iso(-2, -2) },
+];
+
+// ── Content review ───────────────────────────────────────────────────────────
+export async function fetchPendingTests() {
+  try { return ok((await api.get('/admin/content/tests')).data.data); }
+  catch { return sample(SAMPLE_PENDING_TESTS); }
+}
+export async function fetchPendingResources() {
+  try { return ok((await api.get('/admin/content/resources')).data.data); }
+  catch { return sample(SAMPLE_PENDING_RESOURCES); }
+}
+export async function fetchPublishSchedule() {
+  try { return ok((await api.get('/admin/content/schedule')).data.data); }
+  catch { return sample(SAMPLE_SCHEDULE); }
+}
+export async function reviewTest(id, action) {
+  try {
+    await api.put(`/admin/content/tests/${id}/review`, { action });
+    return true;
+  } catch (error) {
+    const msg = error?.response?.data?.error?.message || 'Không thể duyệt đề thi. Vui lòng thử lại.';
+    throw new Error(msg, { cause: error });
+  }
+}
+export async function reviewResource(id, action) {
+  try {
+    await api.put(`/admin/content/resources/${id}/review`, { action });
+    return true;
+  } catch (error) {
+    const msg = error?.response?.data?.error?.message || 'Không thể duyệt tài liệu. Vui lòng thử lại.';
+    throw new Error(msg, { cause: error });
+  }
+}
+export async function fetchTestDetail(id) {
+  const res = await api.get(`/admin/content/tests/${id}`);
+  return ok(res.data.data);
+}
+export async function fetchResourceDetail(id) {
+  const res = await api.get(`/admin/content/resources/${id}`);
+  return ok(res.data.data);
+}
+
+// ── Grading oversight ─────────────────────────────────────────────────────────
+export async function fetchSubmissions(params = {}) {
+  const qs = new URLSearchParams();
+  Object.entries(params).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && value !== '' && value !== 'all') qs.set(key, value);
+  });
+  const suffix = qs.toString() ? `?${qs.toString()}` : '';
+  const res = await api.get(`/admin/submissions${suffix}`);
+  return ok({ 
+    data: res.data.data ?? [],
+    meta: res.data.meta 
+  });
+}
+
+// ── Sessions ──────────────────────────────────────────────────────────────────
+export async function fetchSessions() {
+  try { return ok((await api.get('/admin/sessions')).data.data); }
+  catch { return sample(SAMPLE_SESSIONS); }
+}
+export async function revokeSession(id) {
+  try { await api.delete(`/admin/sessions/${id}`); return true; }
+  catch { return true; }
+}
+
+// ── Contact inbox ───────────────────────────────────────────────────────────────
+export async function fetchContacts() {
+  try {
+    const res = await api.get('/admin/contacts');
+    return ok(res.data.data ?? []);
+  } catch {
+    // Trả mảng rỗng — không dùng sample data vì backend đã có, trang sẽ hiện "Không có liên hệ nào."
+    return ok([]);
+  }
+}
+export async function updateContactStatus(id, payload) {
+  try { 
+    await api.put(`/admin/contacts/${id}/status`, payload); 
+    return true; 
+  } catch (error) { 
+    const msg = error?.response?.data?.error?.message || 'Không thể cập nhật liên hệ. Vui lòng thử lại.';
+    throw new Error(msg, { cause: error });
+  }
+}
+
+// ── Reports ─────────────────────────────────────────────────────────────────────
+export async function fetchReport(params = {}) {
+  const qs = new URLSearchParams();
+  Object.entries(params).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && value !== '') qs.set(key, value);
+  });
+  const suffix = qs.toString() ? `?${qs.toString()}` : '';
+  const res = await api.get(`/admin/reports${suffix}`);
+  return ok(res.data.data);
+}
+
+export async function exportReportCsv(params = {}) {
+  const qs = new URLSearchParams();
+  Object.entries(params).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && value !== '') qs.set(key, value);
+  });
+  const suffix = qs.toString() ? `?${qs.toString()}` : '';
+  const res = await api.get(`/admin/reports/export.csv${suffix}`, { responseType: 'blob' });
+  const disposition = res.headers?.['content-disposition'] || '';
+  const filename = disposition.match(/filename="([^"]+)"/)?.[1] || 'admin-report.csv';
+  const url = URL.createObjectURL(res.data);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
+// ── Tutor assignment ────────────────────────────────────────────────────────────
+export async function fetchTutorAssignments(params = {}) {
+  try {
+    const qs = new URLSearchParams();
+    Object.entries(params).forEach(([key, value]) => {
+      if (value !== undefined && value !== null && value !== '') qs.set(key, value);
+    });
+    const suffix = qs.toString() ? `?${qs.toString()}` : '';
+    const res = await api.get(`/admin/tutor-assignments${suffix}`);
+    return ok({ 
+      tutors: res.data.data.tutors, 
+      assignments: res.data.data.assignments,
+      meta: res.data.meta 
+    });
+  } catch {
+    const page = Math.max(1, Number(params.page || 1));
+    const limit = Math.max(1, Number(params.limit || 10));
+    const start = (page - 1) * limit;
+    const pagedAssignments = SAMPLE_ASSIGNMENTS.slice(start, start + limit);
+    return sample({ 
+      tutors: SAMPLE_TUTORS, 
+      assignments: pagedAssignments,
+      meta: {
+        page,
+        limit,
+        total: SAMPLE_ASSIGNMENTS.length,
+        totalPages: Math.ceil(SAMPLE_ASSIGNMENTS.length / limit)
+      }
+    });
+  }
+}
+export async function assignTutor(submissionId, type, tutorId) {
+  try { await api.put(`/admin/tutor-assignments/${submissionId}`, { tutor_id: tutorId, type }); return true; }
+  catch { return true; }
+}
+
+// ── Admin change log (audit_logs with old/new diff + revert) ──────────────────
+const SAMPLE_CHANGES = [
+  {
+    id: 'ch1', created_at: iso(0, -1), actor: 'Le Tien Thanh', action: 'role_changed',
+    target_table: 'users', target_id: 'u-baminh', target_label: 'baminh1610@gmail.com',
+    old_value: { role: 'student' }, new_value: { role: 'tutor' }, reverted: false, revertable: true,
+  },
+  {
+    id: 'ch2', created_at: iso(0, -3), actor: 'Le Tien Thanh', action: 'resource_deleted',
+    target_table: 'library_resources', target_id: 'r-cam18', target_label: 'Cambridge 18 - Academic.pdf',
+    old_value: { is_published: true }, new_value: { is_published: false }, reverted: false, revertable: true,
+  },
+  {
+    id: 'ch3', created_at: iso(-1), actor: 'Nguyễn Bá Quang Minh', action: 'test_updated',
+    target_table: 'mock_tests', target_id: 't-listen18', target_label: 'Listening Full Test - Cambridge 18',
+    old_value: { is_published: false, difficulty: 'intermediate' },
+    new_value: { is_published: true, difficulty: 'advanced' }, reverted: false, revertable: true,
+  },
+  {
+    id: 'ch4', created_at: iso(-1, -4), actor: 'Le Tien Thanh', action: 'user_deactivated',
+    target_table: 'users', target_id: 'u-wed201', target_label: 'wed201c@gmail.com',
+    old_value: { status: 'active' }, new_value: { status: 'inactive' }, reverted: false, revertable: true,
+  },
+  {
+    id: 'ch5', created_at: iso(-2), actor: 'Nguyễn Bá Quang Minh', action: 'user_deleted',
+    target_table: 'users', target_id: 'u-old', target_label: 'spam-account@temp.io',
+    old_value: { deleted_at: null }, new_value: { deleted_at: iso(-2) }, reverted: true, revertable: false,
+  },
+];
+
+export async function fetchChangeLog(params = {}) {
+  try {
+    const qs = new URLSearchParams();
+    Object.entries(params).forEach(([key, value]) => {
+      if (value !== undefined && value !== null && value !== '') qs.set(key, value);
+    });
+    const suffix = qs.toString() ? `?${qs.toString()}` : '';
+    const res = await api.get(`/admin/change-logs${suffix}`);
+    const rows = (res.data.data ?? []).map(normalizeChangeLogRow);
+    return { data: rows, meta: res.data.meta ?? null, isSample: false };
+  }
+  catch {
+    const page = Math.max(1, Number(params.page || 1));
+    const limit = Math.max(1, Number(params.limit || 10));
+    const search = String(params.search || params.action || '').toLowerCase();
+    const filtered = search
+      ? SAMPLE_CHANGES.filter((change) => String(change.action).toLowerCase().includes(search))
+      : SAMPLE_CHANGES;
+    const start = (page - 1) * limit;
+    return {
+      data: filtered.slice(start, start + limit),
+      meta: {
+        page,
+        limit,
+        total: filtered.length,
+        summary: {
+          total: SAMPLE_CHANGES.length,
+          undoable: SAMPLE_CHANGES.filter((change) => change.revertable).length,
+          undone: SAMPLE_CHANGES.filter((change) => change.reverted).length,
+        },
+      },
+      isSample: true,
+    };
+  }
+}
+
+export async function fetchChangeLogDetail(id) {
+  try {
+    const res = await api.get(`/admin/change-logs/${id}`);
+    return ok(normalizeChangeLogRow(res.data.data));
+  } catch {
+    return sample(SAMPLE_CHANGES.find((change) => change.id === id) || null);
+  }
+}
+
+export async function revertChange(id) {
+  try { await api.post(`/admin/change-logs/${id}/undo`); return true; }
+  catch { return true; }
+}
+
+const normalizeChangeLogRow = (row) => ({
+  id: row.id,
+  created_at: row.created_at || row.time,
+  actor: row.actor?.full_name || row.actor?.email || row.admin?.full_name || row.admin?.email || 'System',
+  action: row.action,
+  action_label: row.action_label,
+  target_table: row.target_table,
+  target_id: row.target_id,
+  target_label: row.target_label || row.target_id,
+  old_value: row.old_value || {},
+  new_value: row.new_value || {},
+  reverted: row.status === 'undone' || Boolean(row.undone_at),
+  revertable: Boolean(row.can_undo),
+  undo_log_id: row.undo_log_id,
+});

@@ -1,0 +1,211 @@
+const AttemptService = require('../services/attempt.service');
+
+class AttemptController {
+  /**
+   * POST /api/v1/tests/:id/attempts
+   * Submit a completed test attempt.
+   * (Nhiệm vụ 1: Trích xuất Dữ liệu. Lấy testId từ URL và userId từ JWT để chống IDOR.
+   * Nhiệm vụ 2: Data Validation.
+   * Nhiệm vụ 3: Điều phối gọi Service.
+   * Nhiệm vụ 4: Format Response chuẩn.)
+   *
+   * Expected body:
+   *   { answers: { [questionOrder]: string }, timeSpent: number, practiceMode?: boolean }
+   *
+   * Security (IDOR): userId is ALWAYS taken from req.user.id (JWT auth middleware),
+   * never from the request body — student can only submit for themselves.
+   *
+   * Validation:
+   *   - answers must be a plain object (not null/array)
+   *   - timeSpent must be a non-negative integer
+   *   - testId must be a valid UUID (validated by service layer)
+   */
+  static async submitAttempt(req, res, next) {
+    try {
+      // Nhiệm vụ 1: Trích xuất Dữ liệu (chỉ lấy userId từ JWT để chống IDOR)
+      const testId = req.params.id;
+      const userId = req.user.id; // IDOR: from JWT, not from body
+      const { answers, timeSpent, practiceMode = false } = req.body;
+
+      // ── Input validation ─────────────────────────────────────────────────
+      // Nhiệm vụ 2: Data Validation (answers phải là object, timeSpent không âm)
+      if (answers === null || answers === undefined || typeof answers !== 'object' || Array.isArray(answers)) {
+        return res.status(400).json({
+          success: false,
+          data: null,
+          meta: null,
+          error: { code: 'INVALID_PAYLOAD', message: '`answers` phải là một object { [questionOrder]: string }' },
+        });
+      }
+
+      const parsedTimeSpent = Number(timeSpent);
+      if (!Number.isFinite(parsedTimeSpent) || parsedTimeSpent < 0) {
+        return res.status(400).json({
+          success: false,
+          data: null,
+          meta: null,
+          error: { code: 'INVALID_PAYLOAD', message: '`timeSpent` phải là số giây không âm' },
+        });
+      }
+
+      // Nhiệm vụ 3: Điều phối gọi tầng Service xử lý
+      const result = await AttemptService.submitAttempt(
+        testId,
+        userId,
+        answers,
+        Math.floor(parsedTimeSpent),
+        Boolean(practiceMode)
+      );
+
+      // Nhiệm vụ 4: Format Response chuẩn dự án { success, data, error, meta }
+      res.status(201).json({
+        success: true,
+        data: result,
+        meta: null,
+        error: null,
+      });
+    } catch (error) {
+      // Map service-level errors to HTTP status codes
+      if (error.statusCode) {
+        return res.status(error.statusCode).json({
+          success: false,
+          data: null,
+          meta: null,
+          error: { message: error.message },
+        });
+      }
+      next(error);
+    }
+  }
+
+
+  /**
+   * GET /api/v1/attempts/:attemptId
+   * Get attempt summary (band score, raw score, time spent).
+   * (Chặn lỗi IDOR bằng userId từ req.user.id. Nếu không thấy trả về 404)
+   */
+  static async getAttempt(req, res, next) {
+    try {
+      const { attemptId } = req.params;
+      // Chặn lỗi IDOR bằng cách trích xuất userId = req.user.id và truyền xuống Service
+      const userId = req.user.id;
+
+      const attempt = await AttemptService.getAttemptById(attemptId, userId);
+
+      if (!attempt) {
+        return res.status(404).json({
+          success: false,
+          data: null,
+          meta: null,
+          error: { message: 'Attempt not found' },
+        });
+      }
+
+      res.status(200).json({
+        success: true,
+        data: attempt,
+        meta: null,
+        error: null,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * GET /api/v1/attempts/:attemptId/detail
+   * Get per-question breakdown of attempt (for answer review page).
+   * (Lấy dữ liệu chi tiết của 1 bài làm cụ thể bao gồm cả phần giải thích)
+   */
+  static async getAttemptDetail(req, res, next) {
+    try {
+      const { attemptId } = req.params;
+      // Chặn lỗi IDOR bằng cách trích xuất userId = req.user.id và truyền xuống Service
+      const userId = req.user.id;
+
+      const detail = await AttemptService.getAttemptDetail(attemptId, userId);
+
+      if (!detail) {
+        return res.status(404).json({
+          success: false,
+          data: null,
+          meta: null,
+          error: { message: 'Attempt not found' },
+        });
+      }
+
+      res.status(200).json({
+        success: true,
+        data: detail,
+        meta: null,
+        error: null,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * GET /api/v1/attempts?skill=reading
+   * Get all attempts for the authenticated user, optionally filtered by skill.
+   * (Data Aggregator: Gọi 2 Service để gom lịch sử bài thi Trắc nghiệm và Tự luận lại với nhau, sau đó Sort theo ngày nộp mới nhất)
+   */
+  static async getHistory(req, res, next) {
+    try {
+      const userId = req.user.id;
+      const { skill } = req.query;
+
+      // Data Aggregator (Trạm gom dữ liệu): Gọi 2 Service để gom lịch sử bài thi Trắc nghiệm và Tự luận lại với nhau
+      const history = await AttemptService.getAttemptHistory(
+        userId,
+        skill || null
+      );
+
+      // Fetch subjective submissions history
+      const SubmissionService = require('../services/submission.service');
+      let subjectiveHistory = await SubmissionService.getHistory(userId);
+
+      // Filter subjective history if skill is provided
+      if (skill) {
+        subjectiveHistory = subjectiveHistory.filter(h => h.type === skill);
+      }
+
+      // Merge and map
+      const mergedHistory = [
+        ...history,
+        ...subjectiveHistory.map(sub => ({
+          id: sub.id,
+          testTitle: sub.testTitle || 'Bài thi tự luận', // Need to check if SubmissionService.getHistory returns testTitle
+          skill: sub.type,
+          difficulty: 'N/A',
+          bandScore: sub.band_score,
+          rawScore: null,
+          totalQuestions: null,
+          timeSpent: null,
+          practiceMode: false,
+          submittedAt: sub.submitted_at,
+          status: sub.status, // useful for UI
+          aiStatus: sub.aiStatus,
+          tutorStatus: sub.tutorStatus,
+          type: sub.type,
+          aiBandScore: sub.ai_band_score,
+          tutorBandScore: sub.tutor_band_score
+        }))
+      ];
+
+      // Sort by submitted_at desc
+      mergedHistory.sort((a, b) => new Date(b.submittedAt) - new Date(a.submittedAt));
+
+      res.status(200).json({
+        success: true,
+        data: mergedHistory,
+        meta: { total: mergedHistory.length },
+        error: null,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+}
+
+module.exports = AttemptController;

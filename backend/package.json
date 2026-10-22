@@ -1,0 +1,77 @@
+{
+  "name": "ieltszone-backend",
+  "version": "0.1.0",
+  "description": "IELTSZone — REST API backend (Node.js 20 + Express 5.x)",
+  "main": "src/app.js",
+  "engines": {
+    "node": ">=20.0.0",
+    "npm": ">=10.0.0"
+  },
+  "scripts": {
+    "start": "node src/app.js",
+    "dev": "nodemon src/app.js",
+    "worker": "node src/worker.js",
+    "test": "node --experimental-vm-modules ./node_modules/jest/bin/jest.js --runInBand",
+    "test:coverage": "node --experimental-vm-modules ./node_modules/jest/bin/jest.js --runInBand --coverage",
+    "lint": "eslint src/ tests/ --ext .js",
+    "db:backup:public": "node scripts/backup-public-database.js",
+    "migrate:preflight": "node scripts/preflight-ai-grading-migration.js",
+    "migrate:baseline": "node scripts/baseline-migrations.js",
+    "migrate": "node scripts/migrate.js",
+    "test:api": "newman run \"DemoNewMan/IeltsZone Test API.postman_collection.json\" -e \"DemoNewMan/IeltsZone.postman_environment.json\" -r htmlextra",
+    "assistant:inspect-schema": "node scripts/assistant-inspect-schema.js",
+    "assistant:debug-db": "node scripts/assistant-debug-db.js",
+    "speaking:runtime-check": "node scripts/check-speaking-runtime.js"
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.1092.0",
+    "@aws-sdk/s3-request-presigner": "^3.1092.0",
+    "@supabase/supabase-js": "^2.108.2",
+    "bcrypt": "^6.0.0",
+    "cookie-parser": "^1.4.7",
+    "cors": "^2.8.6",
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1",
+    "express-rate-limit": "^8.5.2",
+    "express-validator": "^7.3.2",
+    "file-type": "^19.6.0",
+    "ioredis": "^5.11.0",
+    "jsonwebtoken": "^9.0.3",
+    "melter": "^0.0.1",
+    "multer": "^2.2.0",
+    "nodemailer": "^8.0.10",
+    "pg": "^8.21.0",
+    "uuid": "^14.0.1",
+    "winston": "^3.11.0",
+    "ws": "^8.21.1"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.5.0",
+    "jest": "^29.7.0",
+    "nodemailer-mock": "^2.0.11",
+    "nodemon": "^3.1.14",
+    "supertest": "^7.2.2",
+    "yaml": "^2.9.0"
+  },
+  "jest": {
+    "rootDir": "..",
+    "testEnvironment": "node",
+    "testMatch": [
+      "<rootDir>/tests/**/*.test.js",
+      "<rootDir>/backend/tests/**/*.test.js"
+    ],
+    "moduleDirectories": [
+      "node_modules",
+      "<rootDir>/backend/node_modules"
+    ],
+    "coverageDirectory": "<rootDir>/backend/coverage",
+    "coverageThreshold": {
+      "global": {
+        "lines": 80,
+        "functions": 80,
+        "branches": 80
+      }
+    }
+  }
+}
