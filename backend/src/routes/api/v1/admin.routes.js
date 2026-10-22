@@ -19,7 +19,6 @@ const authorize = authorizeFactory(AppError);
 router.get('/overview', authenticate, authorize('admin'), adminMetricsController.getOverview);
 router.get('/reports/export.csv', authenticate, authorize('admin'), adminMetricsController.exportReportsCsv);
 router.get('/reports', authenticate, authorize('admin'), adminMetricsController.getReports);
-router.get('/ai-usage', authenticate, authorize('admin'), adminMetricsController.getAiUsage);
 router.get('/users', authenticate, authorize('admin'), adminController.listUsers);
 router.put('/users/:id/role', authenticate, authorize('admin'), adminController.updateUserRole);
 router.put('/users/:id/status', authenticate, authorize('admin'), adminController.updateUserStatus);
@@ -75,8 +74,5 @@ const adminGradingController = require('../../../controllers/adminGrading.contro
 
 // GET  /api/v1/admin/submissions          — List all writing + speaking submissions
 router.get('/submissions', authenticate, authorize('admin'), adminGradingController.listSubmissions);
-
-// POST /api/v1/admin/submissions/:type/:id/retry — Reset to pending for AI re-grading
-router.post('/submissions/:type/:id/retry', authenticate, authorize('admin'), adminGradingController.retryGrading);
 
 module.exports = router;

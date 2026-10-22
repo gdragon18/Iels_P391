@@ -4,7 +4,7 @@
 > **Tài liệu**: Kế hoạch thực thi và theo dõi tiến độ gỡ bỏ tính năng AI  
 > **Vị trí lưu trữ**: `docs/ai-decommissioning-plan.md`  
 > **Ngày cập nhật**: 22/10/2026  
-> **Trạng thái tổng thể**: **Phase 2 (Phase 1 Frontend đã hoàn thành - Sẵn sàng thực hiện Phase 2)**  
+> **Trạng thái tổng thể**: **Phase 3 (Phase 1 & Phase 2 đã hoàn thành - Sẵn sàng thực hiện Phase 3)**  
 
 ---
 
@@ -29,13 +29,13 @@ Sau khi quét toàn bộ mã nguồn tại thời điểm hiện tại:
 | Thành phần kiểm tra | Kết quả kiểm tra thực tế | Trạng thái |
 | :--- | :--- | :---: |
 | **Phase 1: Frontend UI & Routes** | Đã xóa `global-assistant/`, các page `AdminAiUsagePage.jsx`, `TutorAiReferencePage.jsx`, `AiFeedbackPanel.jsx`, `useSpeakingGrading.js` và toàn bộ UI AI khỏi frontend (Commit `67adef1`). | 🟢 **Đã hoàn thành (100%)** |
-| **Phase 2: Backend Routes & Controllers** | `aiGrading.controller.js`, `speakingGrading.controller.js` và route `/api/v1/assistant` vẫn đang tồn tại. | 🟡 **Đang chuẩn bị thực hiện (0%)** |
-| **Phase 3: Core Services & AI Modules** | Thư mục `backend/src/ai/`, `backend/src/api/assistant/` và các service AI vẫn nguyên vẹn. Chưa có file `backend/src/utils/text.js`. | 🔴 Chưa bắt đầu |
+| **Phase 2: Backend Routes & Controllers** | Đã xóa `aiGrading.controller.js`, `speakingGrading.controller.js`, chuyển `createAudioUpload` và `submitFullSpeaking` sang `submission.controller.js`, gỡ bỏ toàn bộ AI routes khỏi `index.js`, `app.js`, `tutors.routes.js`, `admin.routes.js`. | 🟢 **Đã hoàn thành (100%)** |
+| **Phase 3: Core Services & AI Modules** | Thư mục `backend/src/ai/`, `backend/src/api/assistant/` và các service AI vẫn nguyên vẹn. Chưa có file `backend/src/utils/text.js`. | 🟡 **Đang chuẩn bị thực hiện (0%)** |
 | **Phase 4: Workers & Hạ tầng** | `backend/src/worker.js`, service `speaking-worker` trong `docker-compose.prod.yml` và các config AI trong `.env.example` vẫn còn. | 🔴 Chưa bắt đầu |
 | **Phase 5: Database Migration** | Migration mới nhất là `030_retry_speaking_artifacts_by_job.sql`. Chưa có migration `031_decommission_ai_features.sql`. | 🔴 Chưa bắt đầu |
 | **Phase 6: Kiểm thử hồi quy** | Chưa tiến hành. | 🔴 Chưa bắt đầu |
 
-👉 **KẾT LUẬN**: Hệ thống **ĐÃ HOÀN THÀNH PHASE 1** và **ĐANG Ở PHASE 2 (API Routes & Controllers AI Endpoints Removal)**.
+👉 **KẾT LUẬN**: Hệ thống **ĐÃ HOÀN THÀNH PHASE 1 & PHASE 2**, hiện tại **ĐANG Ở PHASE 3: Services Decoupling & Module Extraction**.
 
 ---
 
@@ -86,26 +86,26 @@ flowchart TD
 ### Phase 2: API Routes & Controllers AI Endpoints Removal
 
 - **Mục tiêu**: Đóng toàn bộ các API endpoint phục vụ AI, đảm bảo client không thể kích hoạt request AI.
-- **Trạng thái**: 🔴 Chưa bắt đầu (0%)
+- **Trạng thái**: 🟢 Đã hoàn thành (100%)
 
 #### Danh sách công việc:
-- [ ] **Chuyển giao logic trước khi xóa**:
-  - [ ] Chuyển method `createAudioUpload` và `submitFull` (phục vụ nộp bài Speaking cho Tutor) từ `speakingGrading.controller.js` sang `submission.controller.js`.
-- [ ] **Chỉnh sửa Routes & Controllers**:
-  - [ ] `backend/src/app.js`: Gỡ middleware hoặc handler liên quan đến AI assistant nếu có.
-  - [ ] `backend/src/routes/api/v1/index.js`: Gỡ `router.use('/assistant', assistantRoutes)`.
-  - [ ] `backend/src/routes/api/v1/submissions.routes.js`: Gỡ các route trigger chấm AI.
-  - [ ] `backend/src/routes/api/v1/tutors.routes.js`: Gỡ route lấy gợi ý AI cho Tutor.
-  - [ ] `backend/src/routes/api/v1/admin.routes.js`: Gỡ route metrics AI usage.
-  - [ ] `backend/src/controllers/submission.controller.js`: Tiếp nhận handler nộp bài Speaking/Writing trực tiếp cho Tutor.
-  - [ ] `backend/src/controllers/tutor.controller.js`: Dọn dẹp các handler liên quan AI reference.
-  - [ ] `backend/src/controllers/adminGrading.controller.js`: Xóa logic thống kê AI grading.
-  - [ ] `backend/src/controllers/adminMetrics.controller.js`: Xóa chỉ số AI quota/usage.
-- [ ] **Xóa file Controllers**:
-  - [ ] Xóa file: `backend/src/controllers/aiGrading.controller.js`
-  - [ ] Xóa file: `backend/src/controllers/speakingGrading.controller.js`
-- **Rủi ro chính**: Mất method upload audio hoặc submit bài Speaking của học viên sang Tutor khi xóa `speakingGrading.controller.js`.
-- **Tiêu chí nghiệm thu Phase 2**: Khởi động backend `node src/app.js`. Server khởi động bình thường trên port 3000, không bị lỗi `MODULE_NOT_FOUND`.
+- [x] **Chuyển giao logic trước khi xóa**:
+  - [x] Chuyển method `createAudioUpload` và `submitFullSpeaking` (phục vụ nộp bài Speaking cho Tutor) sang `submission.controller.js`.
+- [x] **Chỉnh sửa Routes & Controllers**:
+  - [x] `backend/src/app.js`: Gỡ bỏ mount `/api/assistant`.
+  - [x] `backend/src/routes/api/v1/index.js`: Gỡ `router.use('/assistant', assistantRoutes)`.
+  - [x] `backend/src/routes/api/v1/submissions.routes.js`: Gỡ các route trigger chấm AI (`/writing/:submissionId/ai-grade`, `/speaking/:speakingGroupId/grading-status`, `/retry-grading`).
+  - [x] `backend/src/routes/api/v1/tutors.routes.js`: Gỡ route AI reference (`/ai-reference`, `/ai-reference/:submissionId`, `/submissions/:type/:submissionId/ai-prelim`, `/transcribe`).
+  - [x] `backend/src/routes/api/v1/admin.routes.js`: Gỡ route `/ai-usage` và retry grading AI.
+  - [x] `backend/src/controllers/submission.controller.js`: Tiếp nhận handler nộp bài Speaking trực tiếp cho Tutor, chặn request với `grader === 'ai'`.
+  - [x] `backend/src/controllers/tutor.controller.js`: Dọn dẹp các handler liên quan AI prelim/reference.
+  - [x] `backend/src/controllers/adminGrading.controller.js`: Xóa logic retry AI grading.
+  - [x] `backend/src/controllers/adminMetrics.controller.js`: Xóa handler `getAiUsage` và loại bỏ chỉ số AI khỏi CSV export.
+- [x] **Xóa file Controllers**:
+  - [x] Xóa file: `backend/src/controllers/aiGrading.controller.js`
+  - [x] Xóa file: `backend/src/controllers/speakingGrading.controller.js`
+- **Rủi ro chính**: Mất method upload audio hoặc submit bài Speaking của học viên sang Tutor khi xóa `speakingGrading.controller.js` -> Đã giải quyết an toàn.
+- **Tiêu chí nghiệm thu Phase 2**: Khởi động backend `node src/app.js`. Server khởi động bình thường không bị lỗi `MODULE_NOT_FOUND` -> Đã kiểm tra đạt.
 
 ---
 
@@ -204,8 +204,8 @@ flowchart TD
 | Phase | Nội dung chính | Người phụ trách | Trạng thái | Ghi chú / Blockers |
 | :---: | :--- | :---: | :---: | :--- |
 | **Phase 1** | Frontend Decommissioning & UI Cleanup | Frontend Dev | ✅ **Done** | Đã xóa UI, components & routes AI |
-| **Phase 2** | API Routes & Controllers AI Endpoints | Backend Dev | 🔄 **In Progress** | Chuyển method upload audio trước khi xóa controller |
-| **Phase 3** | Services Decoupling & Module Extraction | Backend Dev | ⏳ To Do | Lưu ý dòng 71-75 ở `adminMetrics.service.js` |
+| **Phase 2** | API Routes & Controllers AI Endpoints | Backend Dev | ✅ **Done** | Đã chuyển upload audio sang submission, xóa 2 controllers và routes AI |
+| **Phase 3** | Services Decoupling & Module Extraction | Backend Dev | 🔄 **In Progress** | Chuẩn bị tạo utils/text.js và bóc tách service |
 | **Phase 4** | Worker & Deployment Cleanup | DevOps / Backend | ⏳ To Do | Giữ nguyên config Redis & Supabase |
 | **Phase 5** | Database Schema Archival | DBA / Backend | ⏳ To Do | Tạo migration 031 an toàn |
 | **Phase 6** | Regression Testing & Acceptance | QA / Full-stack | ⏳ To Do | Nghiệm thu cuối cùng |
