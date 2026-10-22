@@ -31,11 +31,11 @@ Sau khi quét toàn bộ mã nguồn tại thời điểm hiện tại:
 | **Phase 1: Frontend UI & Routes** | Đã xóa `global-assistant/`, các page `AdminAiUsagePage.jsx`, `TutorAiReferencePage.jsx`, `AiFeedbackPanel.jsx`, `useSpeakingGrading.js` và toàn bộ UI AI khỏi frontend (Commit `67adef1`). | 🟢 **Đã hoàn thành (100%)** |
 | **Phase 2: Backend Routes & Controllers** | Đã xóa `aiGrading.controller.js`, `speakingGrading.controller.js`, chuyển `createAudioUpload` và `submitFullSpeaking` sang `submission.controller.js`, gỡ bỏ toàn bộ AI routes khỏi `index.js`, `app.js`, `tutors.routes.js`, `admin.routes.js`. | 🟢 **Đã hoàn thành (100%)** |
 | **Phase 3: Core Services & AI Modules** | Đã tạo `backend/src/utils/text.js` & `storage.config.js`. Đã bóc tách AI khỏi `submission.service.js`, `tutor.service.js`, `adminMetrics.service.js`, `grading.oversight.service.js`. Đã xóa triệt để thư mục `src/ai/`, `src/api/assistant/` và 9 service file AI độc lập. Tests đạt 100% pass. | 🟢 **Đã hoàn thành (100%)** |
-| **Phase 4: Workers & Hạ tầng** | `backend/src/worker.js`, service `speaking-worker` trong `docker-compose.prod.yml` và các config AI trong `.env.example` vẫn còn. | 🔴 Chưa bắt đầu |
+| **Phase 4: Workers & Hạ tầng** | Đã xóa `speaking-worker` khỏi `docker-compose.prod.yml`, xóa `ffmpeg` khỏi `Dockerfile.backend`, xóa `backend/src/worker.js`, `backend/src/jobs/`, `aiGrading.config.js`, các scripts AI trong `backend/scripts/`, các package/script không dùng trong `package.json`, và làm sạch `.env.example`. | 🟢 **Đã hoàn thành (100%)** |
 | **Phase 5: Database Migration** | Migration mới nhất là `030_retry_speaking_artifacts_by_job.sql`. Chưa có migration `031_decommission_ai_features.sql`. | 🔴 Chưa bắt đầu |
 | **Phase 6: Kiểm thử hồi quy** | Chưa tiến hành. | 🔴 Chưa bắt đầu |
 
-👉 **KẾT LUẬN**: Hệ thống **ĐÃ HOÀN THÀNH PHASE 1, PHASE 2 VÀ PHASE 3**, chuẩn bị bước sang **PHASE 4: Worker, Infrastructure & Deployment Cleanup**.
+👉 **KẾT LUẬN**: Hệ thống **ĐÃ HOÀN THÀNH PHASE 1, PHASE 2, PHASE 3 VÀ PHASE 4**, chuẩn bị bước sang **PHASE 5: Database Schema Archival / Cleanup**.
 
 ---
 
@@ -135,27 +135,27 @@ flowchart TD
 
 ---
 
-### Phase 4: Worker, Infrastructure & Deployment Cleanup
+### ✅ Phase 4: Worker, Infrastructure & Deployment Cleanup — HOÀN THÀNH
 
 - **Mục tiêu**: Vô hiệu hóa container worker và gỡ bỏ các cấu hình, biến môi trường AI không còn sử dụng.
-- **Trạng thái**: 🔴 Chưa bắt đầu (0%)
+- **Trạng thái**: 🟢 **Đã hoàn thành 100%**
 
 #### Danh sách công việc:
-- [ ] **Cập nhật Docker & Container**:
-  - [ ] `docker-compose.prod.yml`: Xóa bỏ service `speaking-worker`.
-  - [ ] `Dockerfile.backend`: Loại bỏ cài đặt `ffmpeg` nếu chỉ phục vụ phân tích AI.
-- [ ] **Dọn dẹp Package Dependencies**:
-  - [ ] `backend/package.json`: Xóa scripts (`worker`, `assistant:*`, `migrate:preflight`), gỡ package `melter` (hoặc các AI SDK nếu có).
-  - [ ] `frontend/package.json`: Gỡ bỏ `react-markdown`, `remark-gfm` nếu không còn dùng ngoài chatbot/AI summary.
-- [ ] **Xóa file Worker & Debug**:
-  - [ ] Xóa file: `backend/src/worker.js`
-  - [ ] Xóa file: `backend/src/jobs/aiGrading.worker.js`, `backend/src/jobs/aiGrading.watchdog.js`
-  - [ ] Xóa các scripts test/debug AI trong `backend/scripts/`.
-- [ ] **Cập nhật biến môi trường**:
-  - [ ] File `.env.example`: Xóa các biến `AI_PROVIDER`, `GEMINI_API_KEY`, `OPENAI_API_KEY`, `AI_GRADING_*`, `AI_SPEAKING_*`, `AI_CALIBRATION_*`.
-  - [ ] Giữ nguyên các config: Database URL, Redis, JWT Secret, Mail/SMTP, Supabase Bucket.
-- **Rủi ro chính**: Sửa nhầm cấu hình của Redis hoặc Database URL.
-- **Tiêu chí nghiệm thu Phase 4**: Build docker image backend và frontend thành công, compose chạy không thiếu service phụ thuộc.
+- [x] **Cập nhật Docker & Container**:
+  - [x] `docker-compose.prod.yml`: Xóa bỏ service `speaking-worker`.
+  - [x] `Dockerfile.backend`: Loại bỏ cài đặt `ffmpeg` (chỉ giữ `tzdata`).
+- [x] **Dọn dẹp Package Dependencies**:
+  - [x] `backend/package.json`: Xóa scripts (`worker`, `migrate:preflight`, `assistant:*`, `speaking:runtime-check`), gỡ dependency `melter`.
+  - [x] `frontend/package.json`: Gỡ bỏ `react-markdown`, `remark-gfm`, `multer`.
+- [x] **Xóa file Worker & Debug**:
+  - [x] Xóa file: `backend/src/worker.js`
+  - [x] Xóa file: `backend/src/jobs/aiGrading.worker.js`, `backend/src/jobs/aiGrading.watchdog.js`, `backend/src/jobs/audioUploadCleanup.job.js`
+  - [x] Xóa file config: `backend/src/config/aiGrading.config.js`
+  - [x] Xóa các scripts test/debug AI trong `backend/scripts/`.
+- [x] **Cập nhật biến môi trường**:
+  - [x] File `.env.example`: Xóa các biến `AI_PROVIDER`, `GEMINI_API_KEY`, `OPENAI_API_KEY`, `AI_GRADING_*`, `AI_SPEAKING_*`, `AI_CALIBRATION_*`, `AI_WORKER_*`, `AI_IDEMPOTENCY_*`.
+  - [x] Giữ nguyên các config cốt lõi: Database URL, Redis, JWT Secret, Mail/SMTP, Supabase Bucket.
+- **Tiêu chí nghiệm thu Phase 4**: Toàn bộ worker và hạ tầng AI đã được loại bỏ; backend app tải bình thường; cấu hình tinh gọn an toàn.
 
 ---
 
