@@ -4,14 +4,14 @@ const { getBandScore, calcWeightedWritingOverall, isValidHalfBandScore } = requi
 const TestService = require('./test.service');
 const AppError = require('../utils/AppError');
 const supabase = require('../config/supabase');
-const { gradeWriting, countWords } = require('../ai/grading.service');
-const { REPORT_STATUS } = require('../ai/aiGrading.constants');
+const { countWords, sanitizeWritingText } = require('../utils/text');
 const logger = require('../utils/logger');
-const { validateWritingWordThreshold, sanitizeWritingText } = require('../ai/grading.validator');
-const { aiGradingConfig } = require('../config/aiGrading.config');
-const { reserveOriginalWithQuota, utcDate } = require('./aiQuota.service');
-const aiJobQueries = require('../db/queries/aiGradingJobs.queries');
-const { sanitizeDiagnostic } = require('./aiUsage.service');
+
+const REPORT_STATUS = Object.freeze({
+  PENDING: 'pending',
+  COMPLETED: 'completed',
+  FAILED: 'failed',
+});
 
 const SUPABASE_BUCKET = process.env.SUPABASE_SPEAKING_BUCKET || 'speaking-audio';
 
@@ -40,65 +40,6 @@ const toNumberOrNull = (value) => {
 };
 
 const calculateWeightedWritingBand = calcWeightedWritingOverall;
-
-const requireWritingIdempotencyKey = (value) => {
-  const key = String(value || '').trim();
-  if (key.length < 16 || key.length > 128 || /\p{Cc}/u.test(key)) {
-    throw new AppError('Idempotency-Key phải dài từ 16 đến 128 ký tự.', 400, 'INVALID_IDEMPOTENCY_KEY');
-  }
-  return key;
-};
-
-const buildWritingFingerprint = ({ testId, tasks }) => crypto.createHash('sha256').update(JSON.stringify({
-  schema: 'writing-submit-v1',
-  test_id: testId || null,
-  tasks: tasks.map((task) => ({
-    task_number: task.task_number,
-    prompt_sha256: crypto.createHash('sha256').update(task.prompt_text || '').digest('hex'),
-    response_sha256: crypto.createHash('sha256').update(task.response_text).digest('hex'),
-  })),
-})).digest('hex');
-
-const loadWritingReplayOutcome = async (writingGroupId) => {
-  const tasksResult = await pool.query(
-    `SELECT * FROM writing_submissions
-     WHERE writing_group_id = $1
-     ORDER BY task_number`,
-    [writingGroupId]
-  );
-  const tasks = tasksResult.rows;
-  const reportsResult = tasks.length ? await pool.query(
-    `SELECT DISTINCT ON (submission_id)
-       submission_id, task_number, band_score, status, error_message
-     FROM ai_grading_reports
-     WHERE submission_type = 'writing' AND submission_id = ANY($1::uuid[])
-       AND deleted_at IS NULL
-     ORDER BY submission_id, generated_at DESC`,
-    [tasks.map((task) => task.id)]
-  ) : { rows: [] };
-  const reports = new Map(reportsResult.rows.map((row) => [row.submission_id, row]));
-  const aiResults = tasks.map((task) => {
-    const report = reports.get(task.id);
-    return {
-      taskNumber: task.task_number,
-      status: report?.status || 'pending',
-      overallBand: toNumberOrNull(report?.band_score),
-      errorMessage: report?.error_message || null,
-    };
-  });
-  const completed = tasks.length === 2 && aiResults.every((item) => item.status === REPORT_STATUS.COMPLETED && item.overallBand !== null);
-  const task1 = aiResults.find((item) => Number(item.taskNumber) === 1);
-  const task2 = aiResults.find((item) => Number(item.taskNumber) === 2);
-  return {
-    writing_group_id: writingGroupId,
-    aiStatus: completed ? REPORT_STATUS.COMPLETED : (aiResults.some((item) => item.status === REPORT_STATUS.FAILED) ? REPORT_STATUS.FAILED : 'pending'),
-    tutorStatus: 'pending',
-    overallAiBand: completed ? calculateWeightedWritingBand(task1.overallBand, task2.overallBand) : null,
-    tasks,
-    aiResults,
-    replayed: true,
-  };
-};
 
 const getTableColumns = async (db, tableName) => {
   const { rows } = await db.query(
@@ -146,18 +87,7 @@ const normalizeWritingTasks = (tasks, { enforceAiThreshold = false } = {}) => {
     throw new AppError('Writing submission must include both Task 1 and Task 2', 400, 'MISSING_FIELD');
   }
 
-  const normalized = [byTaskNumber.get(1), byTaskNumber.get(2)];
-  if (enforceAiThreshold) {
-    normalized.forEach((task) => {
-      const validated = validateWritingWordThreshold(
-        task.response_text,
-        task.task_number === 1 ? 'task1' : 'task2'
-      );
-      task.response_text = validated.text;
-      task.word_count = validated.wordCount;
-    });
-  }
-  return normalized;
+  return [byTaskNumber.get(1), byTaskNumber.get(2)];
 };
 
 const AI_REPORT_INSERT_ORDER = [
@@ -837,153 +767,24 @@ class SubmissionService {
     }
   }
 
-  static async submitWriting() {
-    throw new AppError(
-      'Writing submission must include both Task 1 and Task 2. Use /submissions/writing/full.',
-      400,
-      'WRITING_FULL_SUBMISSION_REQUIRED'
-    );
-  }
-
-  static async processWritingTasksAsync(userId, writingGroupId, testTitle, persistedTasks, writingJob, io) {
-  try {
-    const aiResults = [];
-    for (const task of persistedTasks) {
-      try {
-        const result = await gradeWriting(
-          task,
-          task.task_number === 1 ? 'task1' : 'task2',
-          {
-            testTitle: task.test_title || testTitle,
-            usageContext: {
-              userId,
-              feature: 'writing_grading',
-              entityType: 'writing_submission',
-              entityId: task.id,
-            },
-          }
-        );
-        await saveCompletedAiReport(task, result);
-        aiResults.push({
-          taskNumber: task.task_number,
-          status: REPORT_STATUS.COMPLETED,
-          overallBand: result.overallBand,
-        });
-      } catch (err) {
-        logger.warn('Writing AI grading failed during full submission', {
-          writingGroupId,
-          taskId: task.id,
-          taskNumber: task.task_number,
-          errorCode: err.errorCode || err.code || 'AI_GRADING_FAILED',
-        });
-        try {
-          await saveFailedAiReport(task, err);
-        } catch (saveErr) {
-          logger.error('Failed to persist Writing AI failure report', {
-            writingGroupId,
-            taskId: task.id,
-            errorCode: saveErr.errorCode || saveErr.code || 'AI_REPORT_SAVE_FAILED',
-          });
-        }
-        aiResults.push({
-          taskNumber: task.task_number,
-          status: REPORT_STATUS.FAILED,
-          errorMessage: safeAiFailureMessage(err),
-        });
-      }
+  static async submitFullWriting(userId, testId, grader, tasks) {
+    if (grader === 'ai') {
+      throw new AppError('AI grading không còn được hỗ trợ. Vui lòng nộp bài cho Tutor chấm.', 400, 'AI_GRADING_DISABLED');
     }
-
-    const task1Ai = aiResults.find(result => result.taskNumber === 1);
-    const task2Ai = aiResults.find(result => result.taskNumber === 2);
-    const aiStatus = aiResults.every(result => result.status === REPORT_STATUS.COMPLETED)
-      ? REPORT_STATUS.COMPLETED
-      : REPORT_STATUS.FAILED;
-    const overallAiBand = aiStatus === REPORT_STATUS.COMPLETED
-      ? calculateWeightedWritingBand(task1Ai.overallBand, task2Ai.overallBand)
-      : null;
-
-    const finalStatus = aiStatus === REPORT_STATUS.COMPLETED ? 'ai_graded' : 'pending';
-
-    const writingColumns = await getTableColumns(pool, 'writing_submissions');
-    const updateValues = [];
-    const setClauses = [];
-    if (writingColumns.has('ai_status')) {
-      updateValues.push(aiStatus);
-      setClauses.push(`ai_status = $${updateValues.length}`);
+    if (grader !== 'tutor') {
+      throw new AppError('grader phải là tutor.', 400, 'INVALID_FIELD');
     }
-    if (writingColumns.has('overall_ai_band')) {
-      updateValues.push(overallAiBand);
-      setClauses.push(`overall_ai_band = $${updateValues.length}`);
-    }
-    updateValues.push(finalStatus);
-    setClauses.push(`status = $${updateValues.length}`);
-    if (writingColumns.has('updated_at')) {
-      setClauses.push('updated_at = NOW()');
-    }
-    updateValues.push(writingGroupId);
-    await pool.query(
-      `UPDATE writing_submissions
-       SET ${setClauses.join(', ')}
-       WHERE writing_group_id = $${updateValues.length}`,
-      updateValues
-    );
-
-    if (writingJob) {
-      await pool.query(
-        `UPDATE ai_grading_jobs
-         SET status = $2, stage = 'finalizing', attempt_count = GREATEST(attempt_count, 1),
-             finished_at = NOW(), last_error_code = $3,
-             last_error_message = $4, last_error_retryable = FALSE,
-             lease_owner = NULL, lease_expires_at = NULL
-         WHERE id = $1 AND submission_type = 'writing' AND status NOT IN ('completed','needs_review','failed')`,
-        [writingJob.id, aiStatus === REPORT_STATUS.COMPLETED ? 'completed' : 'failed',
-          aiStatus === REPORT_STATUS.COMPLETED ? null : 'WRITING_GRADING_FAILED',
-          aiStatus === REPORT_STATUS.COMPLETED ? null : 'Một hoặc nhiều Writing task chấm thất bại.']
-      );
-    }
-
-    if (io) {
-      if (aiStatus === REPORT_STATUS.COMPLETED) {
-        io.to(userId).emit('grading_complete', {
-          submissionId: writingGroupId,
-          studentId: userId,
-          grader: 'ai',
-          status: 'ai_graded',
-          overallBand: overallAiBand,
-          completedAt: new Date().toISOString(),
-        });
-      } else {
-        io.to(userId).emit('grading_failed', {
-          submissionId: writingGroupId,
-          studentId: userId,
-          grader: 'ai',
-          status: 'pending',
-          errorCode: 'WRITING_GRADING_FAILED',
-        });
-      }
-    }
-  } catch (error) {
-    logger.error('processWritingTasksAsync failed entirely', { writingGroupId, error: error.message });
-  }
-  }
-
-  static async submitFullWriting(userId, testId, grader, tasks, { idempotencyKey, io } = {}) {
-    if (!['ai', 'tutor'].includes(grader)) {
-      throw new AppError('grader phải là ai hoặc tutor.', 400, 'INVALID_FIELD');
-    }
-    const normalizedTasks = normalizeWritingTasks(tasks, { enforceAiThreshold: grader === 'ai' });
+    const normalizedTasks = normalizeWritingTasks(tasks);
     const normalizedTestId = normalizeOptionalUuid(testId);
     if (testId && !normalizedTestId) {
       throw new AppError('test_id không hợp lệ.', 400, 'INVALID_TEST_ID');
     }
-    let testTitle = null;
     if (normalizedTestId) {
       try {
         const testRes = await pool.query('SELECT id, title FROM mock_tests WHERE id = $1', [normalizedTestId]);
         if (testRes.rows.length === 0) {
           throw new AppError('Không tìm thấy bài thi Writing.', 404, 'TEST_NOT_FOUND');
         }
-        testTitle = testRes.rows[0].title;
       } catch (err) {
         if (err instanceof AppError) throw err;
         throw new AppError('test_id không hợp lệ.', 400, 'INVALID_TEST_ID');
@@ -992,59 +793,10 @@ class SubmissionService {
 
     const { randomUUID } = require('node:crypto');
     const writingGroupId = randomUUID();
-    const writingFingerprint = grader === 'ai'
-      ? buildWritingFingerprint({ testId: normalizedTestId, tasks: normalizedTasks })
-      : null;
-    const key = grader === 'ai' ? requireWritingIdempotencyKey(idempotencyKey) : null;
-    if (grader === 'ai') {
-      const fastReplay = await aiJobQueries.lookupJobByIdempotency(pool, userId, key);
-      if (fastReplay) {
-        if (new Date(fastReplay.idempotency_expires_at).getTime() <= Date.now()) {
-          throw new AppError('Cửa sổ phát lại đã hết hạn.', 410, 'IDEMPOTENCY_WINDOW_EXPIRED');
-        }
-        if (fastReplay.input_fingerprint !== writingFingerprint || fastReplay.submission_type !== 'writing') {
-          throw new AppError('Idempotency-Key đã dùng cho yêu cầu khác.', 409, 'IDEMPOTENCY_KEY_REUSED');
-        }
-        return loadWritingReplayOutcome(fastReplay.group_id);
-      }
-    }
     const client = await pool.connect();
-    let writingJob = null;
 
     try {
       await client.query('BEGIN');
-      if (grader === 'ai') {
-        const reservation = await reserveOriginalWithQuota({
-          client,
-          userId,
-          idempotencyKey: key,
-          fingerprint: writingFingerprint,
-          dailyLimit: aiGradingConfig.dailyQuota,
-          date: utcDate(),
-          lookupIdempotency: aiJobQueries.lookupJobByIdempotency,
-          lookupFingerprint: (db, owner, digest) => aiJobQueries.lookupOriginalByFingerprint(db, owner, 'writing', digest),
-          countOriginalUsage: aiJobQueries.countOriginalUsage,
-          reserveOriginal: (db) => aiJobQueries.insertRootJob(db, {
-            submissionType: 'writing',
-            groupId: writingGroupId,
-            userId,
-            idempotencyKey: key,
-            idempotencyExpiresAt: new Date(Date.now() + aiGradingConfig.idempotencyTtlSeconds * 1000).toISOString(),
-            inputFingerprint: writingFingerprint,
-            pipelineVersion: aiGradingConfig.writingPipelineVersion,
-            scoringConfigSha256: aiGradingConfig.writingScoringConfigSha256,
-            calibrationBundleSha256: null,
-          }),
-        });
-        if (reservation.kind === 'duplicate') {
-          throw new AppError('Bài Writing này đã được gửi chấm bằng khóa khác.', 409, 'DUPLICATE_GRADING_REQUEST');
-        }
-        if (reservation.kind === 'replay') {
-          await client.query('COMMIT');
-          return loadWritingReplayOutcome(reservation.value.group_id);
-        }
-        writingJob = reservation.value;
-      }
       const writingColumns = await getTableColumns(client, 'writing_submissions');
       
       for (const task of normalizedTasks) {
@@ -1055,7 +807,7 @@ class SubmissionService {
           prompt_text: task.prompt_text,
           response_text: task.response_text,
           word_count: task.word_count,
-          grader,
+          grader: 'tutor',
           status: 'pending',
           writing_group_id: writingGroupId,
           ai_status: 'pending',
@@ -1088,17 +840,9 @@ class SubmissionService {
     );
     const persistedTasks = persistedTasksRes.rows;
 
-    if (grader === 'ai') {
-      SubmissionService.processWritingTasksAsync(
-        userId, writingGroupId, testTitle, persistedTasks, writingJob, io
-      ).catch(err => {
-        logger.error('Background async writing grading error', { error: err.message, writingGroupId });
-      });
-    }
-
     return {
       writing_group_id: writingGroupId,
-      aiStatus: grader === 'ai' ? 'pending' : 'pending',
+      aiStatus: 'pending',
       tutorStatus: 'pending',
       overallAiBand: null,
       tasks: persistedTasks,
@@ -1134,23 +878,15 @@ class SubmissionService {
     if (!allowed) throw new AppError('Bạn không có quyền truy cập audio này.', 403, 'AUTH_PERM_001');
 
     if (part.audio_storage_key) {
-      const { aiGradingConfig } = require('../config/aiGrading.config');
+      const { storageConfig } = require('../config/storage.config');
       const { createObjectStorageAdapter } = require('../storage/objectStorage.adapter');
-      const storage = createObjectStorageAdapter(aiGradingConfig.storage);
+      const storage = createObjectStorageAdapter(storageConfig);
       const signed = await storage.createSignedDownload({
         key: part.audio_storage_key,
-        expiresInSeconds: aiGradingConfig.storage.signedDownloadTtlSeconds,
+        expiresInSeconds: storageConfig.signedDownloadTtlSeconds,
       });
       if (!signed) throw new AppError('Bài Speaking không có audio.', 404, 'AUDIO_NOT_FOUND');
       return { url: signed.url, expires_at: signed.expiresAt };
-    }
-    const { aiGradingConfig } = require('../config/aiGrading.config');
-    if (aiGradingConfig.enabled) {
-      throw new AppError(
-        'Audio legacy phải được chuyển sang private storage trước khi truy cập.',
-        409,
-        'LEGACY_AUDIO_REQUIRES_PRIVATE_MIGRATION'
-      );
     }
     const legacyUrl = toPublicSpeakingAudioUrl(part.audio_url);
     if (!legacyUrl) {
@@ -1320,29 +1056,7 @@ class SubmissionService {
     `;
     const result = await pool.query(query, [userId]);
     const speakingGroupIds = result.rows.filter((row) => row.type === 'speaking').map((row) => row.id);
-    const jobs = speakingGroupIds.length ? await pool.query(
-      `WITH RECURSIVE retry_chain AS (
-         SELECT job.*, 0 AS retry_depth
-         FROM ai_grading_jobs job
-         WHERE job.user_id = $1 AND job.retry_of_job_id IS NULL
-           AND job.group_id = ANY($2::uuid[]) AND job.deleted_at IS NULL
-         UNION ALL
-         SELECT child.*, retry_chain.retry_depth + 1
-         FROM ai_grading_jobs child
-         JOIN retry_chain ON child.retry_of_job_id = retry_chain.id
-         WHERE child.deleted_at IS NULL
-       ), ranked AS (
-         SELECT retry_chain.*, ROW_NUMBER() OVER (
-           PARTITION BY group_id ORDER BY retry_depth DESC, created_at DESC
-         ) AS chain_rank
-         FROM retry_chain
-       )
-       SELECT group_id, id AS job_id, status, stage, attempt_count, max_attempts,
-              (status = 'failed' AND retry_depth < $3) AS can_retry,
-              retry_depth AS manual_retry_count
-       FROM ranked
-       WHERE chain_rank = 1`,
-      [userId, speakingGroupIds, aiGradingConfig.manualRetryLimit]) : { rows: [] };
+    const jobs = { rows: [] };
     const jobByGroup = new Map(jobs.rows.map((job) => [String(job.group_id), job]));
     return result.rows.map(row => {
       const job = row.type === 'speaking' ? jobByGroup.get(String(row.id)) : null;
@@ -1519,74 +1233,7 @@ class SubmissionService {
 
     const parts = partsRes.rows;
     const partIds = parts.map(part => part.id);
-    let asyncStatus = null;
-    try {
-      const { getSpeakingSubmissionService } = require('./speakingSubmission.service');
-      asyncStatus = await getSpeakingSubmissionService().getStatus(
-        String(parts[0].speaking_group_id || parts[0].id),
-        { id: userId, role: 'student' }
-      );
-    } catch (error) {
-      if (error.errorCode !== 'GRADING_JOB_NOT_FOUND') throw error;
-    }
-
-    if (asyncStatus) {
-      const result = asyncStatus.status === 'completed' ? asyncStatus.result : null;
-      const feedbackByPart = new Map((result?.part_feedback || []).map((item) => [
-        Number(item.part_number), item,
-      ]));
-      const criteria = result?.criteria || {};
-      const aiFeedback = result ? {
-        id: result.report_id,
-        status: 'completed',
-        overallBand: result.overall_band,
-        computedBand: result.overall_band,
-        criterionScores: {
-          fluencyCoherence: criteria.fluency_coherence || null,
-          lexicalResource: criteria.lexical_resource || null,
-          grammaticalRangeAccuracy: criteria.grammatical_range_accuracy || null,
-          pronunciation: criteria.pronunciation || null,
-        },
-        summary: result.text_based_feedback?.coherence || '',
-        partFeedback: result.part_feedback || [],
-        disclaimer: result.disclaimer,
-        evidenceMode: result.evidence_mode,
-        submissionType: 'speaking',
-      } : null;
-      return {
-        submissionId: String(parts[0].speaking_group_id || parts[0].id),
-        testTitle: parts[0].test_title || 'IELTS Speaking',
-        skill: 'speaking',
-        submittedAt: parts[0].submitted_at,
-        grader: parts[0].grader,
-        status: asyncStatus.status === 'completed' ? 'ai_graded' : asyncStatus.status,
-        gradingStatus: asyncStatus.status,
-        gradingStage: asyncStatus.stage,
-        canRetry: asyncStatus.can_retry,
-        manualRetryCount: asyncStatus.manual_retry_count,
-        manualRetryLimit: asyncStatus.manual_retry_limit,
-        overallSpeakingBand: result?.overall_band ?? null,
-        overallAiBand: result?.overall_band ?? null,
-        overallTutorBand: null,
-        aiStatus: asyncStatus.status,
-        tutorStatus: null,
-        aiFeedback,
-        tutorGrade: null,
-        parts: parts.map(part => {
-          const partFeedback = feedbackByPart.get(Number(part.part_number)) || null;
-          return {
-            submissionId: part.id,
-            partNumber: part.part_number,
-            prompt: part.prompt_text || '',
-            promptText: part.prompt_text || '',
-            audioUrl: '',
-            transcript: partFeedback?.display_transcript || '',
-            aiPartFeedback: partFeedback,
-          };
-        }),
-      };
-    }
-    const aiColumns = await getAiReportColumns();
+        const aiColumns = await getAiReportColumns();
     const aiWhere = ['submission_id = ANY($2::uuid[])'];
     const aiParams = ['speaking', partIds];
     if (aiColumns.has('speaking_group_id') && parts[0].speaking_group_id) {

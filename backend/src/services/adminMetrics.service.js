@@ -69,11 +69,6 @@ const getOverview = async () => {
         AND (review_status IS NULL OR review_status = 'approved')
     `),
     pool.query(`
-      SELECT COUNT(*)::int AS calls, COALESCE(SUM(total_tokens), 0)::int AS tokens
-      FROM ai_usage_logs
-      WHERE (created_at AT TIME ZONE '${TZ}')::date = (NOW() AT TIME ZONE '${TZ}')::date
-    `),
-    pool.query(`
       WITH days AS (
         SELECT generate_series(
           (NOW() AT TIME ZONE '${TZ}')::date - interval '6 days',
@@ -113,8 +108,6 @@ const getOverview = async () => {
     totalUsers: usersRes.rows[0]?.total_users || 0,
     activeUsers: usersRes.rows[0]?.active_users || 0,
     openTests: testsRes.rows[0]?.open_tests || 0,
-    aiCallsToday: aiTodayRes.rows[0]?.calls || 0,
-    aiTokensToday: aiTodayRes.rows[0]?.tokens || 0,
     roleDistribution,
     newRegistrationsByDay: registrationsRes.rows,
     recentActivities: activitiesRes.rows,
@@ -134,14 +127,6 @@ const getReports = async (params = {}) => {
     attempts AS (
       SELECT (submitted_at AT TIME ZONE '${TZ}')::date AS day, COUNT(*)::int AS count
       FROM test_attempts WHERE submitted_at IS NOT NULL AND ${rangeSql('submitted_at')} GROUP BY 1
-    ),
-    ai_calls AS (
-      SELECT (created_at AT TIME ZONE '${TZ}')::date AS day,
-             COUNT(*)::int AS calls,
-             COALESCE(SUM(total_tokens), 0)::int AS tokens,
-             COUNT(*) FILTER (WHERE success)::int AS success_calls,
-             COUNT(*) FILTER (WHERE NOT success)::int AS failed_calls
-      FROM ai_usage_logs WHERE ${rangeSql('created_at')} GROUP BY 1
     ),
     writing_submissions_by_day AS (
       SELECT (MIN(submitted_at) AT TIME ZONE '${TZ}')::date AS day, 1::int AS count
@@ -166,15 +151,10 @@ const getReports = async (params = {}) => {
     SELECT days.day::text AS date,
            COALESCE(new_users.count, 0)::int AS "newUsers",
            COALESCE(attempts.count, 0)::int AS attempts,
-           COALESCE(ai_calls.calls, 0)::int AS "aiCalls",
-           COALESCE(ai_calls.tokens, 0)::int AS "aiTokens",
-           COALESCE(submissions.count, 0)::int AS submissions,
-           COALESCE(ai_calls.success_calls, 0)::int AS "successAiCalls",
-           COALESCE(ai_calls.failed_calls, 0)::int AS "failedAiCalls"
+           COALESCE(submissions.count, 0)::int AS submissions
     FROM days
     LEFT JOIN new_users ON new_users.day = days.day
     LEFT JOIN attempts ON attempts.day = days.day
-    LEFT JOIN ai_calls ON ai_calls.day = days.day
     LEFT JOIN submissions ON submissions.day = days.day
     ORDER BY days.day
   `, [range.from, range.to]);
@@ -182,81 +162,14 @@ const getReports = async (params = {}) => {
   const summary = dailyRes.rows.reduce((acc, row) => ({
     newUsers: acc.newUsers + row.newUsers,
     attempts: acc.attempts + row.attempts,
-    aiCalls: acc.aiCalls + row.aiCalls,
-    aiTokens: acc.aiTokens + row.aiTokens,
     submissions: acc.submissions + row.submissions,
-    successAiCalls: acc.successAiCalls + row.successAiCalls,
-    failedAiCalls: acc.failedAiCalls + row.failedAiCalls,
-  }), { newUsers: 0, attempts: 0, aiCalls: 0, aiTokens: 0, submissions: 0, successAiCalls: 0, failedAiCalls: 0 });
+  }), { newUsers: 0, attempts: 0, submissions: 0 });
 
   return { range, summary, daily: dailyRes.rows };
-};
-
-const getAiUsage = async (params = {}) => {
-  const range = validateDateRange(params, 30);
-  const [summaryRes, byDayRes, byFeatureRes, topUsersRes] = await Promise.all([
-    pool.query(`
-      SELECT COUNT(*)::int AS "totalCalls",
-             COALESCE(SUM(total_tokens), 0)::int AS "totalTokens",
-             COUNT(DISTINCT user_id) FILTER (WHERE user_id IS NOT NULL)::int AS "aiUsers",
-             COUNT(*) FILTER (WHERE success)::int AS "successCalls",
-             COUNT(*) FILTER (WHERE NOT success)::int AS "failedCalls"
-      FROM ai_usage_logs WHERE ${rangeSql('created_at')}
-    `, [range.from, range.to]),
-    pool.query(`
-      WITH days AS (SELECT generate_series($1::date, $2::date, interval '1 day')::date AS day)
-      SELECT days.day::text AS date, COUNT(logs.id)::int AS calls,
-             COALESCE(SUM(logs.total_tokens), 0)::int AS tokens
-      FROM days
-      LEFT JOIN ai_usage_logs logs ON (logs.created_at AT TIME ZONE '${TZ}')::date = days.day
-      GROUP BY days.day ORDER BY days.day
-    `, [range.from, range.to]),
-    pool.query(`
-      SELECT feature, COUNT(*)::int AS calls, COALESCE(SUM(total_tokens), 0)::int AS tokens
-      FROM ai_usage_logs WHERE ${rangeSql('created_at')}
-      GROUP BY feature ORDER BY calls DESC
-    `, [range.from, range.to]),
-    pool.query(`
-      SELECT logs.user_id AS "userId", COALESCE(users.full_name, users.email) AS name,
-             users.email, COUNT(*)::int AS calls, COALESCE(SUM(logs.total_tokens), 0)::int AS tokens
-      FROM ai_usage_logs logs
-      JOIN users ON users.id = logs.user_id
-      WHERE logs.user_id IS NOT NULL AND ${rangeSql('logs.created_at')}
-      GROUP BY logs.user_id, users.full_name, users.email
-      ORDER BY calls DESC, tokens DESC
-      LIMIT 10
-    `, [range.from, range.to]),
-  ]);
-
-  const summary = summaryRes.rows[0] || {};
-  summary.totalCalls = summary.totalCalls || 0;
-  summary.totalTokens = summary.totalTokens || 0;
-  summary.aiUsers = summary.aiUsers || 0;
-  summary.successCalls = summary.successCalls || 0;
-  summary.failedCalls = summary.failedCalls || 0;
-  summary.avgTokensPerCall = summary.totalCalls > 0 ? Math.round(summary.totalTokens / summary.totalCalls) : 0;
-
-  return {
-    range,
-    summary,
-    byDay: byDayRes.rows,
-    byFeature: byFeatureRes.rows.map((row) => ({
-      feature: row.feature,
-      label: FEATURE_LABELS[row.feature] || FEATURE_LABELS.unknown,
-      calls: row.calls,
-      tokens: row.tokens,
-      percentage: summary.totalCalls > 0 ? Math.round((row.calls / summary.totalCalls) * 10000) / 100 : 0,
-    })),
-    topUsers: topUsersRes.rows.map((row) => ({
-      ...row,
-      avgTokensPerCall: row.calls > 0 ? Math.round(row.tokens / row.calls) : 0,
-    })),
-  };
 };
 
 module.exports = {
   validateDateRange,
   getOverview,
   getReports,
-  getAiUsage,
 };

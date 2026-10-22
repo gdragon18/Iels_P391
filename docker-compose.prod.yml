@@ -25,18 +25,6 @@ services:
     depends_on:
       - redis
 
-  speaking-worker:
-    image: ieltszone-backend:latest
-    container_name: ieltszone-speaking-worker
-    restart: unless-stopped
-    stop_grace_period: 150s
-    command: ["npm", "run", "worker"]
-    env_file:
-      - ${IELTSZONE_ENV_FILE:-.env.production}
-    environment:
-      - REDIS_URL=redis://redis:6379
-    depends_on:
-      - redis
 
   frontend:
     build:

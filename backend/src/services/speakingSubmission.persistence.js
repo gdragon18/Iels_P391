@@ -1,8 +1,5 @@
 const AppError = require('../utils/AppError');
-const { reserveOriginalWithQuota, utcDate } = require('./aiQuota.service');
-const jobQueries = require('../db/queries/aiGradingJobs.queries');
 const {
-  buildFingerprint,
   canonicalJson,
   promptSnapshot,
   sha256,
@@ -28,7 +25,7 @@ const resolvePrompts = async (db, testId, parts) => {
   return prompts;
 };
 
-const insertSpeakingParts = async ({ db, userId, testId, groupId, prompts, uploads, grader }) => {
+const insertSpeakingParts = async ({ db, userId, testId, groupId, prompts, uploads, grader = 'tutor' }) => {
   const inserted = [];
   for (let index = 0; index < 3; index += 1) {
     const upload = uploads[index];
@@ -49,22 +46,7 @@ const insertSpeakingParts = async ({ db, userId, testId, groupId, prompts, uploa
   return inserted;
 };
 
-const reserveSpeakingJob = ({ client, userId, key, testId, prompts, uploads, groupId, expiresAt, config, now }) => {
-  const fingerprint = buildFingerprint({ testId, prompts, uploads });
-  return reserveOriginalWithQuota({
-    client, userId, idempotencyKey: key, fingerprint,
-    dailyLimit: config.dailyQuota, date: utcDate(new Date(now)),
-    lookupIdempotency: jobQueries.lookupJobByIdempotency,
-    lookupFingerprint: (db, owner, digest) => jobQueries.lookupOriginalByFingerprint(db, owner, 'speaking', digest),
-    countOriginalUsage: jobQueries.countOriginalUsage,
-    reserveOriginal: (db) => jobQueries.insertRootJob(db, {
-      submissionType: 'speaking', groupId, userId, idempotencyKey: key,
-      idempotencyExpiresAt: expiresAt, inputFingerprint: fingerprint,
-      pipelineVersion: config.pipelineVersion,
-      scoringConfigSha256: config.scoringConfigSha256,
-      calibrationBundleSha256: config.calibrationBundleSha256,
-    }),
-  });
+module.exports = {
+  resolvePrompts,
+  insertSpeakingParts,
 };
-
-module.exports = { insertSpeakingParts, reserveSpeakingJob, resolvePrompts };

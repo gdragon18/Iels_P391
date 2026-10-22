@@ -3,7 +3,6 @@ const AppError = require('../utils/AppError');
 const supabase = require('../config/supabase');
 const { randomUUID } = require('node:crypto');
 const path = require('path');
-const { aiGradingConfig } = require('../config/aiGrading.config');
 const { getSpeakingSubmissionService } = require('../services/speakingSubmission.service');
 
 const SUPABASE_BUCKET = process.env.SUPABASE_SPEAKING_BUCKET || 'speaking-audio';
@@ -69,14 +68,7 @@ class SubmissionController {
    */
   static async uploadSpeakingAudio(req, res, next) {
     try {
-      if (aiGradingConfig.enabled) {
-        throw new AppError(
-          'Upload Speaking multipart cũ đã bị tắt. Hãy dùng signed upload riêng tư.',
-          410,
-          'LEGACY_SPEAKING_UPLOAD_DISABLED'
-        );
-      }
-      if (!req.file) {
+            if (!req.file) {
         throw new AppError('No audio file uploaded', 400, 'NO_FILE');
       }
 
@@ -135,14 +127,7 @@ class SubmissionController {
    */
   static async submitSpeaking(req, res, next) {
     try {
-      if (aiGradingConfig.enabled) {
-        throw new AppError(
-          'Nộp Speaking từng Part kiểu cũ đã bị tắt. Hãy dùng /speaking/full.',
-          410,
-          'LEGACY_SPEAKING_SUBMISSION_DISABLED'
-        );
-      }
-      const userId = req.user.id;
+            const userId = req.user.id;
       let { test_id, part_number, temp_s3_key, grader } = req.body;
 
       const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;

@@ -1,22 +1,8 @@
-jest.mock('../../src/ai/grading.service', () => ({
-  gradeWriting: jest.fn(),
-  countWords: jest.fn(text => String(text || '').trim().split(/\s+/).filter(Boolean).length)
-}));
-
-jest.mock('uuid', () => ({
-  v4: jest.fn(() => 'writing-group-1')
-}));
-
 jest.mock('../../src/db/pool', () => ({
   pool: {
     query: jest.fn(),
     connect: jest.fn()
   }
-}));
-
-const mockGetSpeakingStatus = jest.fn();
-jest.mock('../../src/services/speakingSubmission.service', () => ({
-  getSpeakingSubmissionService: () => ({ getStatus: mockGetSpeakingStatus }),
 }));
 
 const mockCreateSignedDownload = jest.fn();
@@ -26,7 +12,6 @@ jest.mock('../../src/storage/objectStorage.adapter', () => ({
 
 const SubmissionService = require('../../src/services/submission.service');
 const { pool } = require('../../src/db/pool');
-const { gradeWriting } = require('../../src/ai/grading.service');
 
 jest.mock('../../src/config/supabase', () => ({
   storage: {
@@ -42,8 +27,6 @@ describe('SubmissionService', () => {
   beforeEach(() => {
     pool.query.mockReset();
     pool.connect.mockReset();
-    gradeWriting.mockReset();
-    mockGetSpeakingStatus.mockReset();
     mockCreateSignedDownload.mockReset();
   });
 
@@ -105,7 +88,6 @@ describe('SubmissionService', () => {
         { task_number: 2, prompt_text: 'Task 2 prompt', response_text: 'Task two response' }
       ]);
 
-      expect(gradeWriting).not.toHaveBeenCalled();
       expect(result.aiStatus).toBe('pending');
       expect(result.tutorStatus).toBe('pending');
       expect(result.tasks).toHaveLength(2);
@@ -293,64 +275,7 @@ describe('SubmissionService', () => {
     });
   });
 
-  describe('getSpeakingFeedbackDetail async projection', () => {
-    const groupId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
-    const userId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
-    const parts = [1, 2, 3].map((partNumber) => ({
-      id: `11111111-1111-4111-8111-11111111111${partNumber}`,
-      speaking_group_id: groupId,
-      user_id: userId,
-      part_number: partNumber,
-      prompt_text: `Prompt ${partNumber}`,
-      grader: 'ai',
-      submitted_at: '2026-08-01T00:00:00.000Z',
-      test_title: 'Speaking test',
-    }));
 
-    it('does not expose processing artifacts before the canonical job completes', async () => {
-      pool.query
-        .mockResolvedValueOnce({ rows: parts })
-        .mockResolvedValueOnce({ rows: parts.map((part) => ({
-          speaking_submission_id: part.id,
-          display_transcript: `private intermediate transcript ${part.part_number}`,
-        })) });
-      mockGetSpeakingStatus.mockResolvedValue({
-        job_id: 'job-1', status: 'running', stage: 'analyzing', can_retry: false,
-        manual_retry_count: 0, manual_retry_limit: 2, result: null,
-      });
-
-      const result = await SubmissionService.getSpeakingFeedbackDetail(groupId, userId);
-      expect(result.parts.map((part) => part.transcript)).toEqual(['', '', '']);
-    });
-
-    it('maps immutable completed display transcripts and feedback to the matching Part', async () => {
-      pool.query.mockResolvedValueOnce({ rows: parts }).mockResolvedValueOnce({ rows: [] });
-      mockGetSpeakingStatus.mockResolvedValue({
-        job_id: 'job-2', status: 'completed', stage: 'completed', can_retry: false,
-        manual_retry_count: 0, manual_retry_limit: 2,
-        result: {
-          overall_band: 6.5,
-          evidence_mode: 'full_audio',
-          criteria: {},
-          disclaimer: 'AI Estimated Band',
-          part_feedback: [3, 1, 2].map((partNumber) => ({
-            part_number: partNumber,
-            display_transcript: `Transcript ${partNumber}`,
-            feedback: `Feedback ${partNumber}`,
-            audio_quality_warnings: [],
-          })),
-        },
-      });
-
-      const result = await SubmissionService.getSpeakingFeedbackDetail(groupId, userId);
-      expect(result.parts.map((part) => part.transcript)).toEqual([
-        'Transcript 1', 'Transcript 2', 'Transcript 3',
-      ]);
-      expect(result.parts.map((part) => part.aiPartFeedback.feedback)).toEqual([
-        'Feedback 1', 'Feedback 2', 'Feedback 3',
-      ]);
-    });
-  });
 
   describe('getSpeakingAudioUrl', () => {
     const submissionId = '11111111-1111-4111-8111-111111111111';

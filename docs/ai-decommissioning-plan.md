@@ -4,7 +4,7 @@
 > **Tài liệu**: Kế hoạch thực thi và theo dõi tiến độ gỡ bỏ tính năng AI  
 > **Vị trí lưu trữ**: `docs/ai-decommissioning-plan.md`  
 > **Ngày cập nhật**: 22/10/2026  
-> **Trạng thái tổng thể**: **Phase 3 đang thực hiện (Phase 1 & Phase 2 đã hoàn thành — Tiếp tục từ Phase 3: xóa thư mục `ai/`, `assistant/` và các service file)**  
+> **Trạng thái tổng thể**: **Phase 3 đã hoàn thành (Phase 1, 2, 3 hoàn thành 100% — Chuẩn bị bắt đầu Phase 4: Worker & Hạ tầng)**  
 
 ---
 
@@ -30,12 +30,12 @@ Sau khi quét toàn bộ mã nguồn tại thời điểm hiện tại:
 | :--- | :--- | :---: |
 | **Phase 1: Frontend UI & Routes** | Đã xóa `global-assistant/`, các page `AdminAiUsagePage.jsx`, `TutorAiReferencePage.jsx`, `AiFeedbackPanel.jsx`, `useSpeakingGrading.js` và toàn bộ UI AI khỏi frontend (Commit `67adef1`). | 🟢 **Đã hoàn thành (100%)** |
 | **Phase 2: Backend Routes & Controllers** | Đã xóa `aiGrading.controller.js`, `speakingGrading.controller.js`, chuyển `createAudioUpload` và `submitFullSpeaking` sang `submission.controller.js`, gỡ bỏ toàn bộ AI routes khỏi `index.js`, `app.js`, `tutors.routes.js`, `admin.routes.js`. | 🟢 **Đã hoàn thành (100%)** |
-| **Phase 3: Core Services & AI Modules** | `backend/src/utils/text.js` đã tạo ✅. Các service chính (`submission.controller.js`, `adminMetrics.service.js`, `speakingSubmission.persistence.js`, `speakingSubmission.service.js`) đã bóc tách AI ✅. **Còn lại**: xóa thư mục `backend/src/ai/`, `backend/src/api/assistant/` và các service file AI độc lập. | 🟡 **Đang thực hiện (~50%)** |
+| **Phase 3: Core Services & AI Modules** | Đã tạo `backend/src/utils/text.js` & `storage.config.js`. Đã bóc tách AI khỏi `submission.service.js`, `tutor.service.js`, `adminMetrics.service.js`, `grading.oversight.service.js`. Đã xóa triệt để thư mục `src/ai/`, `src/api/assistant/` và 9 service file AI độc lập. Tests đạt 100% pass. | 🟢 **Đã hoàn thành (100%)** |
 | **Phase 4: Workers & Hạ tầng** | `backend/src/worker.js`, service `speaking-worker` trong `docker-compose.prod.yml` và các config AI trong `.env.example` vẫn còn. | 🔴 Chưa bắt đầu |
 | **Phase 5: Database Migration** | Migration mới nhất là `030_retry_speaking_artifacts_by_job.sql`. Chưa có migration `031_decommission_ai_features.sql`. | 🔴 Chưa bắt đầu |
 | **Phase 6: Kiểm thử hồi quy** | Chưa tiến hành. | 🔴 Chưa bắt đầu |
 
-👉 **KẾT LUẬN**: Hệ thống **ĐÃ HOÀN THÀNH PHASE 1 & PHASE 2**, hiện tại **ĐANG Ở PHASE 3: Services Decoupling & Module Extraction**.
+👉 **KẾT LUẬN**: Hệ thống **ĐÃ HOÀN THÀNH PHASE 1, PHASE 2 VÀ PHASE 3**, chuẩn bị bước sang **PHASE 4: Worker, Infrastructure & Deployment Cleanup**.
 
 ---
 
@@ -109,32 +109,29 @@ flowchart TD
 
 ---
 
-### 🔄 Phase 3: Services Decoupling & Module Extraction — ĐANG THỰC HIỆN
+### ✅ Phase 3: Services Decoupling & Module Extraction — HOÀN THÀNH
 
 - **Mục tiêu**: Bóc tách toàn bộ code AI khỏi các service cốt lõi; xóa thư mục `src/ai` và `src/api/assistant`.
-- **Trạng thái**: 🟡 **Đang thực hiện (~50%)** — Nhánh `ManhND-HE191501`. Uncommitted changes đang chờ commit.
-
-> **⚠️ Người tiếp theo cần làm**: Commit các file đang dở (`git add . && git commit`), sau đó hoàn thành các mục `[ ]` bên dưới.
+- **Trạng thái**: 🟢 **Đã hoàn thành 100%**
 
 #### Danh sách công việc:
 - [x] **Tạo tiện ích chung mới**:
   - [x] Tạo file: `backend/src/utils/text.js` chứa các hàm thuần túy `countWords` và `sanitizeWritingText`.
-- [x] **Chỉnh sửa các Service cốt lõi** *(uncommitted — cần commit)*:
+  - [x] Tạo file: `backend/src/config/storage.config.js` tách rời cấu hình Object Storage & Audio Upload Token khỏi AI config.
+- [x] **Chỉnh sửa các Service cốt lõi**:
   - [x] `backend/src/controllers/submission.controller.js`: Bóc tách phụ thuộc AI.
   - [x] `backend/src/services/adminMetrics.service.js`: Gỡ bỏ query gọi bảng `ai_usage_logs` để tránh lỗi 500 Admin Dashboard.
-  - [x] `backend/src/services/speakingSubmission.persistence.js`: Tách rời AI analyzer.
-  - [x] `backend/src/services/speakingSubmission.service.js`: Giữ lại luồng lưu file âm thanh, tách rời AI.
-- [ ] **Chỉnh sửa các Service còn lại**:
-  - [ ] `backend/src/services/submission.service.js`: Gỡ bỏ gọi AI queue/jobs khi học viên nộp bài; trỏ trực tiếp trạng thái sang `pending_tutor`.
-  - [ ] `backend/src/services/tutor.service.js`: Gỡ bỏ truy vấn dữ liệu AI suggestion.
-  - [ ] `backend/src/services/grading.oversight.service.js`: Gỡ bỏ bộ lọc và chỉ số AI.
-- [ ] **Xóa các thư mục & files AI** *(việc chính còn lại)*:
-  - [ ] Xóa thư mục: `backend/src/api/assistant/`
-  - [ ] Xóa thư mục: `backend/src/ai/`
-  - [ ] Xóa file service: `ai.service.js`, `aiQuota.service.js`, `aiUsage.service.js`, `speakingAiGrading.service.js`, `speakingEvidence.service.js`, `speakingGrading.service.js`, `speakingGradingRetry.service.js`, `speakingTutorPrelim.service.js`, `audioNormalizer.service.js`.
-  - [ ] Xóa file queries & configs: `aiGradingJobs.queries.js`, `speakingAnalysis.queries.js`, `aiGrading.config.js`.
-- **Rủi ro chính**: ~~`adminMetrics.service.js` gọi `ai_usage_logs`~~ → Đã xử lý ✅. Cẩn thận khi xóa service để không mất luồng `submission.service.js`.
-- **Tiêu chí nghiệm thu Phase 3**: Chạy các unit test của `tutor.service` và `submission.service` đạt 100% pass.
+  - [x] `backend/src/services/speakingSubmission.persistence.js`: Tách rời AI analyzer và job reservation.
+  - [x] `backend/src/services/speakingSubmission.service.js`: Giữ lại luồng lưu file âm thanh cho Tutor chấm, tách rời AI.
+  - [x] `backend/src/services/submission.service.js`: Gỡ bỏ gọi AI queue/jobs khi học viên nộp bài; chỉ chấp nhận chấm bởi Tutor; làm sạch hàm audio URL.
+  - [x] `backend/src/services/tutor.service.js`: Gỡ bỏ truy vấn dữ liệu AI suggestion và các hàm tham khảo AI.
+  - [x] `backend/src/services/grading.oversight.service.js`: Gỡ bỏ logic trigger AI re-grade.
+- [x] **Xóa các thư mục & files AI**:
+  - [x] Xóa thư mục: `backend/src/api/assistant/`
+  - [x] Xóa thư mục: `backend/src/ai/`
+  - [x] Xóa file service: `ai.service.js`, `aiQuota.service.js`, `aiUsage.service.js`, `speakingAiGrading.service.js`, `speakingEvidence.service.js`, `speakingGrading.service.js`, `speakingGradingRetry.service.js`, `speakingTutorPrelim.service.js`, `audioNormalizer.service.js`.
+  - [x] Xóa file queries: `aiGradingJobs.queries.js`, `speakingAnalysis.queries.js`.
+- **Tiêu chí nghiệm thu Phase 3**: ✅ Chạy unit test `tutor.service.test.js` và `submission.service.test.js` đạt 100% pass (13/13 tests passed).
 
 ---
 
