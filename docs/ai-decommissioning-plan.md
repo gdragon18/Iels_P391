@@ -4,7 +4,7 @@
 > **Tài liệu**: Kế hoạch thực thi và theo dõi tiến độ gỡ bỏ tính năng AI  
 > **Vị trí lưu trữ**: `docs/ai-decommissioning-plan.md`  
 > **Ngày cập nhật**: 22/10/2026  
-> **Trạng thái tổng thể**: **Phase 3 (Phase 1 & Phase 2 đã hoàn thành - Sẵn sàng thực hiện Phase 3)**  
+> **Trạng thái tổng thể**: **Phase 3 đang thực hiện (Phase 1 & Phase 2 đã hoàn thành — Tiếp tục từ Phase 3: xóa thư mục `ai/`, `assistant/` và các service file)**  
 
 ---
 
@@ -30,7 +30,7 @@ Sau khi quét toàn bộ mã nguồn tại thời điểm hiện tại:
 | :--- | :--- | :---: |
 | **Phase 1: Frontend UI & Routes** | Đã xóa `global-assistant/`, các page `AdminAiUsagePage.jsx`, `TutorAiReferencePage.jsx`, `AiFeedbackPanel.jsx`, `useSpeakingGrading.js` và toàn bộ UI AI khỏi frontend (Commit `67adef1`). | 🟢 **Đã hoàn thành (100%)** |
 | **Phase 2: Backend Routes & Controllers** | Đã xóa `aiGrading.controller.js`, `speakingGrading.controller.js`, chuyển `createAudioUpload` và `submitFullSpeaking` sang `submission.controller.js`, gỡ bỏ toàn bộ AI routes khỏi `index.js`, `app.js`, `tutors.routes.js`, `admin.routes.js`. | 🟢 **Đã hoàn thành (100%)** |
-| **Phase 3: Core Services & AI Modules** | Thư mục `backend/src/ai/`, `backend/src/api/assistant/` và các service AI vẫn nguyên vẹn. Chưa có file `backend/src/utils/text.js`. | 🟡 **Đang chuẩn bị thực hiện (0%)** |
+| **Phase 3: Core Services & AI Modules** | `backend/src/utils/text.js` đã tạo ✅. Các service chính (`submission.controller.js`, `adminMetrics.service.js`, `speakingSubmission.persistence.js`, `speakingSubmission.service.js`) đã bóc tách AI ✅. **Còn lại**: xóa thư mục `backend/src/ai/`, `backend/src/api/assistant/` và các service file AI độc lập. | 🟡 **Đang thực hiện (~50%)** |
 | **Phase 4: Workers & Hạ tầng** | `backend/src/worker.js`, service `speaking-worker` trong `docker-compose.prod.yml` và các config AI trong `.env.example` vẫn còn. | 🔴 Chưa bắt đầu |
 | **Phase 5: Database Migration** | Migration mới nhất là `030_retry_speaking_artifacts_by_job.sql`. Chưa có migration `031_decommission_ai_features.sql`. | 🔴 Chưa bắt đầu |
 | **Phase 6: Kiểm thử hồi quy** | Chưa tiến hành. | 🔴 Chưa bắt đầu |
@@ -52,34 +52,34 @@ flowchart TD
 
 ---
 
-### Phase 1: Frontend Decommissioning & UI Simplification
+### ✅ Phase 1: Frontend Decommissioning & UI Simplification — HOÀN THÀNH
 
 - **Mục tiêu**: Học viên và Giáo viên không còn nhìn thấy bất kỳ nút bấm, modal hay màn hình AI nào trên giao diện web.
-- **Trạng thái**: 🔴 Chưa bắt đầu (0%)
+- **Trạng thái**: 🟢 **Đã hoàn thành 100%** — Commit `67adef1` trên nhánh `main`.
 
 #### Danh sách công việc:
-- [ ] **Chỉnh sửa các file giao diện**:
-  - [ ] `frontend/src/App.jsx`: Gỡ bỏ các route AI (`/admin/ai-usage`, `/tutor/ai-reference`, `/tutor/ai-reference/:id`), gỡ `GlobalAssistantButton`.
-  - [ ] `frontend/src/layouts/AdminLayout.jsx`: Xóa menu dẫn tới AI Usage.
-  - [ ] `frontend/src/layouts/TutorLayout.jsx`: Xóa menu/navigation dẫn tới AI Reference.
-  - [ ] `frontend/src/pages/subjective-testing/WritingTestPage.jsx`: Xóa tùy chọn nộp cho AI (chỉ giữ nộp cho Tutor).
-  - [ ] `frontend/src/pages/subjective-testing/SpeakingTestPage.jsx`: Xóa tùy chọn chấm AI, chuyển luồng nộp sang Tutor.
-  - [ ] `frontend/src/components/grading/SpeakingSummaryScreen.jsx`: Gỡ điểm/đánh giá AI sơ bộ.
-  - [ ] `frontend/src/components/grading/FeedbackReport.jsx`: Ẩn/xóa tab hoặc badge "AI Feedback".
-  - [ ] `frontend/src/components/grading/TutorGradingPanel.jsx`: Xóa panel gợi ý AI chấm điểm.
-  - [ ] `frontend/src/pages/grading/StudentHistoryPage.jsx`: Bỏ bộ lọc/nhãn AI Graded.
-  - [ ] `frontend/src/pages/admin/GradingOversightPage.jsx`: Bỏ các chỉ số liên quan đến AI Grading.
-  - [ ] `frontend/src/components/grading/StudentDashboardWidgets.jsx`: Xóa widget hiển thị "AI Quota".
-  - [ ] `frontend/src/services/grading.service.js`: Xóa các hàm gọi API AI chấm bài.
-- [ ] **Xóa file & thư mục**:
-  - [ ] Xóa thư mục: `frontend/src/features/global-assistant/`
-  - [ ] Xóa file: `frontend/src/pages/admin/AdminAiUsagePage.jsx`
-  - [ ] Xóa file: `frontend/src/pages/grading/TutorAiReferencePage.jsx`
-  - [ ] Xóa file: `frontend/src/pages/grading/TutorAiReferenceDetailPage.jsx`
-  - [ ] Xóa file: `frontend/src/components/grading/AiFeedbackPanel.jsx`
-  - [ ] Xóa file: `frontend/src/hooks/useSpeakingGrading.js`
-- **Rủi ro chính**: Gãy import đường dẫn trong React Router hoặc các component cha.
-- **Tiêu chí nghiệm thu Phase 1**: Chạy `npm run build` trong `frontend/`. Ứng dụng phải build thành công không lỗi syntax hoặc missing imports.
+- [x] **Chỉnh sửa các file giao diện**:
+  - [x] `frontend/src/App.jsx`: Gỡ bỏ các route AI (`/admin/ai-usage`, `/tutor/ai-reference`, `/tutor/ai-reference/:id`), gỡ `GlobalAssistantButton`.
+  - [x] `frontend/src/layouts/AdminLayout.jsx`: Xóa menu dẫn tới AI Usage.
+  - [x] `frontend/src/layouts/TutorLayout.jsx`: Xóa menu/navigation dẫn tới AI Reference.
+  - [x] `frontend/src/pages/subjective-testing/WritingTestPage.jsx`: Xóa tùy chọn nộp cho AI (chỉ giữ nộp cho Tutor).
+  - [x] `frontend/src/pages/subjective-testing/SpeakingTestPage.jsx`: Xóa tùy chọn chấm AI, chuyển luồng nộp sang Tutor.
+  - [x] `frontend/src/components/grading/SpeakingSummaryScreen.jsx`: Gỡ điểm/đánh giá AI sơ bộ.
+  - [x] `frontend/src/components/grading/FeedbackReport.jsx`: Ẩn/xóa tab hoặc badge "AI Feedback".
+  - [x] `frontend/src/components/grading/TutorGradingPanel.jsx`: Xóa panel gợi ý AI chấm điểm.
+  - [x] `frontend/src/pages/grading/StudentHistoryPage.jsx`: Bỏ bộ lọc/nhãn AI Graded.
+  - [x] `frontend/src/pages/admin/GradingOversightPage.jsx`: Bỏ các chỉ số liên quan đến AI Grading.
+  - [x] `frontend/src/components/grading/StudentDashboardWidgets.jsx`: Xóa widget hiển thị "AI Quota".
+  - [x] `frontend/src/services/grading.service.js`: Xóa các hàm gọi API AI chấm bài.
+- [x] **Xóa file & thư mục**:
+  - [x] Xóa thư mục: `frontend/src/features/global-assistant/`
+  - [x] Xóa file: `frontend/src/pages/admin/AdminAiUsagePage.jsx`
+  - [x] Xóa file: `frontend/src/pages/grading/TutorAiReferencePage.jsx`
+  - [x] Xóa file: `frontend/src/pages/grading/TutorAiReferenceDetailPage.jsx`
+  - [x] Xóa file: `frontend/src/components/grading/AiFeedbackPanel.jsx`
+  - [x] Xóa file: `frontend/src/hooks/useSpeakingGrading.js`
+- **Rủi ro chính**: ~~Gãy import đường dẫn trong React Router~~ → Đã kiểm tra và xử lý.
+- **Tiêu chí nghiệm thu Phase 1**: ✅ `npm run build` frontend thành công, không lỗi import.
 
 ---
 
@@ -109,26 +109,31 @@ flowchart TD
 
 ---
 
-### Phase 3: Services Decoupling & Module Extraction
+### 🔄 Phase 3: Services Decoupling & Module Extraction — ĐANG THỰC HIỆN
 
 - **Mục tiêu**: Bóc tách toàn bộ code AI khỏi các service cốt lõi; xóa thư mục `src/ai` và `src/api/assistant`.
-- **Trạng thái**: 🔴 Chưa bắt đầu (0%)
+- **Trạng thái**: 🟡 **Đang thực hiện (~50%)** — Nhánh `ManhND-HE191501`. Uncommitted changes đang chờ commit.
+
+> **⚠️ Người tiếp theo cần làm**: Commit các file đang dở (`git add . && git commit`), sau đó hoàn thành các mục `[ ]` bên dưới.
 
 #### Danh sách công việc:
-- [ ] **Tạo tiện ích chung mới**:
-  - [ ] Tạo file: `backend/src/utils/text.js` chứa các hàm thuần túy `countWords` và `sanitizeWritingText`.
-- [ ] **Chỉnh sửa các Service**:
+- [x] **Tạo tiện ích chung mới**:
+  - [x] Tạo file: `backend/src/utils/text.js` chứa các hàm thuần túy `countWords` và `sanitizeWritingText`.
+- [x] **Chỉnh sửa các Service cốt lõi** *(uncommitted — cần commit)*:
+  - [x] `backend/src/controllers/submission.controller.js`: Bóc tách phụ thuộc AI.
+  - [x] `backend/src/services/adminMetrics.service.js`: Gỡ bỏ query gọi bảng `ai_usage_logs` để tránh lỗi 500 Admin Dashboard.
+  - [x] `backend/src/services/speakingSubmission.persistence.js`: Tách rời AI analyzer.
+  - [x] `backend/src/services/speakingSubmission.service.js`: Giữ lại luồng lưu file âm thanh, tách rời AI.
+- [ ] **Chỉnh sửa các Service còn lại**:
   - [ ] `backend/src/services/submission.service.js`: Gỡ bỏ gọi AI queue/jobs khi học viên nộp bài; trỏ trực tiếp trạng thái sang `pending_tutor`.
   - [ ] `backend/src/services/tutor.service.js`: Gỡ bỏ truy vấn dữ liệu AI suggestion.
-  - [ ] `backend/src/services/adminMetrics.service.js`: **Đặc biệt lưu ý** gỡ bỏ query gọi bảng `ai_usage_logs` (dòng 71-75) để tránh lỗi 500 khi Admin xem Dashboard.
   - [ ] `backend/src/services/grading.oversight.service.js`: Gỡ bỏ bộ lọc và chỉ số AI.
-  - [ ] `backend/src/services/speakingSubmission.service.js`: Giữ lại luồng lưu file âm thanh và tạo record submission cho Tutor, tách rời module AI analyzer.
-- [ ] **Xóa các thư mục & files AI**:
+- [ ] **Xóa các thư mục & files AI** *(việc chính còn lại)*:
   - [ ] Xóa thư mục: `backend/src/api/assistant/`
   - [ ] Xóa thư mục: `backend/src/ai/`
   - [ ] Xóa file service: `ai.service.js`, `aiQuota.service.js`, `aiUsage.service.js`, `speakingAiGrading.service.js`, `speakingEvidence.service.js`, `speakingGrading.service.js`, `speakingGradingRetry.service.js`, `speakingTutorPrelim.service.js`, `audioNormalizer.service.js`.
   - [ ] Xóa file queries & configs: `aiGradingJobs.queries.js`, `speakingAnalysis.queries.js`, `aiGrading.config.js`.
-- **Rủi ro chính**: `adminMetrics.service.js` gọi `ai_usage_logs` gây sập API Dashboard của Admin.
+- **Rủi ro chính**: ~~`adminMetrics.service.js` gọi `ai_usage_logs`~~ → Đã xử lý ✅. Cẩn thận khi xóa service để không mất luồng `submission.service.js`.
 - **Tiêu chí nghiệm thu Phase 3**: Chạy các unit test của `tutor.service` và `submission.service` đạt 100% pass.
 
 ---
@@ -205,7 +210,7 @@ flowchart TD
 | :---: | :--- | :---: | :---: | :--- |
 | **Phase 1** | Frontend Decommissioning & UI Cleanup | Frontend Dev | ✅ **Done** | Đã xóa UI, components & routes AI |
 | **Phase 2** | API Routes & Controllers AI Endpoints | Backend Dev | ✅ **Done** | Đã chuyển upload audio sang submission, xóa 2 controllers và routes AI |
-| **Phase 3** | Services Decoupling & Module Extraction | Backend Dev | 🔄 **In Progress** | Chuẩn bị tạo utils/text.js và bóc tách service |
+| **Phase 3** | Services Decoupling & Module Extraction | Backend Dev | 🟡 **In Progress (~50%)** | `text.js` ✅, 4 service bóc tách ✅ (uncommitted). Còn: xóa `ai/`, `assistant/`, các service file AI, sửa `submission.service.js`, `tutor.service.js` |
 | **Phase 4** | Worker & Deployment Cleanup | DevOps / Backend | ⏳ To Do | Giữ nguyên config Redis & Supabase |
 | **Phase 5** | Database Schema Archival | DBA / Backend | ⏳ To Do | Tạo migration 031 an toàn |
 | **Phase 6** | Regression Testing & Acceptance | QA / Full-stack | ⏳ To Do | Nghiệm thu cuối cùng |
