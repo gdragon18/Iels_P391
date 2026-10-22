@@ -4,7 +4,7 @@
 > **Tài liệu**: Kế hoạch thực thi và theo dõi tiến độ gỡ bỏ tính năng AI  
 > **Vị trí lưu trữ**: `docs/ai-decommissioning-plan.md`  
 > **Ngày cập nhật**: 22/10/2026  
-> **Trạng thái tổng thể**: **Phase 0 (Chưa triển khai - Sẵn sàng bắt đầu Phase 1)**  
+> **Trạng thái tổng thể**: **Phase 2 (Phase 1 Frontend đã hoàn thành - Sẵn sàng thực hiện Phase 2)**  
 
 ---
 
@@ -28,14 +28,14 @@ Sau khi quét toàn bộ mã nguồn tại thời điểm hiện tại:
 
 | Thành phần kiểm tra | Kết quả kiểm tra thực tế | Trạng thái |
 | :--- | :--- | :---: |
-| **Phase 1: Frontend UI & Routes** | `global-assistant`, `AdminAiUsagePage.jsx`, `TutorAiReferencePage.jsx`, `AiFeedbackPanel.jsx`, `useSpeakingGrading.js` vẫn đang tồn tại và được import trong `App.jsx`. | 🔴 Chưa bắt đầu |
-| **Phase 2: Backend Routes & Controllers** | `aiGrading.controller.js`, `speakingGrading.controller.js` và route `/api/v1/assistant` vẫn đang hoạt động. | 🔴 Chưa bắt đầu |
+| **Phase 1: Frontend UI & Routes** | Đã xóa `global-assistant/`, các page `AdminAiUsagePage.jsx`, `TutorAiReferencePage.jsx`, `AiFeedbackPanel.jsx`, `useSpeakingGrading.js` và toàn bộ UI AI khỏi frontend (Commit `67adef1`). | 🟢 **Đã hoàn thành (100%)** |
+| **Phase 2: Backend Routes & Controllers** | `aiGrading.controller.js`, `speakingGrading.controller.js` và route `/api/v1/assistant` vẫn đang tồn tại. | 🟡 **Đang chuẩn bị thực hiện (0%)** |
 | **Phase 3: Core Services & AI Modules** | Thư mục `backend/src/ai/`, `backend/src/api/assistant/` và các service AI vẫn nguyên vẹn. Chưa có file `backend/src/utils/text.js`. | 🔴 Chưa bắt đầu |
 | **Phase 4: Workers & Hạ tầng** | `backend/src/worker.js`, service `speaking-worker` trong `docker-compose.prod.yml` và các config AI trong `.env.example` vẫn còn. | 🔴 Chưa bắt đầu |
 | **Phase 5: Database Migration** | Migration mới nhất là `030_retry_speaking_artifacts_by_job.sql`. Chưa có migration `031_decommission_ai_features.sql`. | 🔴 Chưa bắt đầu |
 | **Phase 6: Kiểm thử hồi quy** | Chưa tiến hành. | 🔴 Chưa bắt đầu |
 
-👉 **KẾT LUẬN**: Hệ thống đang ở **bước khởi động (Phase 0)**, **chưa có phase nào được thực thi**. Đội ngũ phát triển cần bắt đầu từ **Phase 1**.
+👉 **KẾT LUẬN**: Hệ thống **ĐÃ HOÀN THÀNH PHASE 1** và **ĐANG Ở PHASE 2 (API Routes & Controllers AI Endpoints Removal)**.
 
 ---
 
@@ -203,8 +203,8 @@ flowchart TD
 
 | Phase | Nội dung chính | Người phụ trách | Trạng thái | Ghi chú / Blockers |
 | :---: | :--- | :---: | :---: | :--- |
-| **Phase 1** | Frontend Decommissioning & UI Cleanup | Frontend Dev | ⏳ To Do | Cần ưu tiên làm trước để đóng UI |
-| **Phase 2** | API Routes & Controllers AI Endpoints | Backend Dev | ⏳ To Do | Chuyển method upload audio trước |
+| **Phase 1** | Frontend Decommissioning & UI Cleanup | Frontend Dev | ✅ **Done** | Đã xóa UI, components & routes AI |
+| **Phase 2** | API Routes & Controllers AI Endpoints | Backend Dev | 🔄 **In Progress** | Chuyển method upload audio trước khi xóa controller |
 | **Phase 3** | Services Decoupling & Module Extraction | Backend Dev | ⏳ To Do | Lưu ý dòng 71-75 ở `adminMetrics.service.js` |
 | **Phase 4** | Worker & Deployment Cleanup | DevOps / Backend | ⏳ To Do | Giữ nguyên config Redis & Supabase |
 | **Phase 5** | Database Schema Archival | DBA / Backend | ⏳ To Do | Tạo migration 031 an toàn |
