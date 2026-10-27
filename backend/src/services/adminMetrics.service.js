@@ -50,7 +50,7 @@ const rangeSql = (column) =>
   `(${column} AT TIME ZONE '${TZ}')::date BETWEEN $1::date AND $2::date`;
 
 const getOverview = async () => {
-  const [usersRes, roleRes, testsRes, aiTodayRes, registrationsRes, activitiesRes] = await Promise.all([
+  const [usersRes, roleRes, testsRes, registrationsRes, activitiesRes] = await Promise.all([
     pool.query(`
       SELECT COUNT(*)::int AS total_users,
              COUNT(*) FILTER (WHERE status = 'active')::int AS active_users
